@@ -111,7 +111,7 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
 # Thank you
 ## Contributers
 
-DenkBrettl
+
 
 ## Used libraries
 
