@@ -40,7 +40,7 @@ alert1Readable = {
 
 
 class ModbusDataCollector2000Delux:
-    def __init__(self, host='192.168.200.1', port=6607, modbus_unit=0, power_correction_factor=0.995):
+    def __init__(self, host='192.168.5.186', port=502, modbus_unit=3, power_correction_factor=0.995):
         self.invSun2000 = inverter.Sun2000(host=host, port=port, modbus_unit=modbus_unit)
         self.power_correction_factor = power_correction_factor
 

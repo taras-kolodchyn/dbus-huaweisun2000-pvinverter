@@ -26,8 +26,8 @@ class HuaweiSUN2000Settings(object):
     def __init__(self):
         # path, default value, min, max, logging silent or not
         supported_settings = {
-            "modbus_host": ["/Settings/HuaweiSUN2000/ModbusHost", "192.168.200.1", "", "", 0],
-            "modbus_port": ["/Settings/HuaweiSUN2000/ModbusPort", 6607, 1, 65536, 0],
+            "modbus_host": ["/Settings/HuaweiSUN2000/ModbusHost", "192.168.5.186", "", "", 0],
+            "modbus_port": ["/Settings/HuaweiSUN2000/ModbusPort", 502, 1, 65536, 0],
             "modbus_unit": ["/Settings/HuaweiSUN2000/ModbusUnit", 0, 0, 247, 0],
             "custom_name": ["/Settings/HuaweiSUN2000/CustomName", "Huawei SUN2000", "", "", 0],
             "position": ["/Settings/HuaweiSUN2000/Position", 0, 0, 2, 0],
