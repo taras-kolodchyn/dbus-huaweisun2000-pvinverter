@@ -43,5 +43,5 @@ fi
 cp -av $SCRIPT_DIR/gui/*.qml /opt/victronenergy/gui/qml/
 
 # As we've modified the GUI, we need to restart it
-svc -t /service/gui
+svc -t /service/start-gui
 
