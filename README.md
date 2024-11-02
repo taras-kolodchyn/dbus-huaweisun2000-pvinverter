@@ -36,7 +36,7 @@ Cooming soon
 
    Easy way:
    ```
-   wget https://github.com/kcbam/dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip
+   wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip
    unzip main.zip -d /data
    mv /data/dbus-huaweisun2000-pvinverter-main /data/dbus-huaweisun2000-pvinverter
    chmod a+x /data/dbus-huaweisun2000-pvinverter/install.sh
