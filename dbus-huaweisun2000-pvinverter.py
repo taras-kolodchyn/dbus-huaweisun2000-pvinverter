@@ -35,13 +35,11 @@ class DbusSun2000Service:
 
         logging.debug("%s /DeviceInstance = %d" % (servicename, settings.get_vrm_instance()))
 
-        # productname="Huawei Sun2000" #tmp please del
-
         # Create the management objects, as specified in the ccgx dbus-api document
         self._dbusservice.add_path('/Mgmt/ProcessName', __file__)
         self._dbusservice.add_path('/Mgmt/ProcessVersion',
                                    'Unkown version, and running on Python ' + platform.python_version())
-        self._dbusservice.add_path('/Mgmt/Connection', 'Internal Wifi Modbus TCP')
+        self._dbusservice.add_path('/Mgmt/Connection', 'Internal Modbus TCP/UDP')
 
         # Create the mandatory objects
         self._dbusservice.add_path('/DeviceInstance', settings.get_vrm_instance())
@@ -50,7 +48,9 @@ class DbusSun2000Service:
         self._dbusservice.add_path('/CustomName', settings.get("custom_name"))
         self._dbusservice.add_path('/FirmwareVersion', 1.0)
         self._dbusservice.add_path('/HardwareVersion', 0)
+     
         self._dbusservice.add_path('/Connected', 1, writeable=True)
+
 
         # Create the mandatory objects
         self._dbusservice.add_path('/Latency', None)
@@ -59,6 +59,7 @@ class DbusSun2000Service:
         self._dbusservice.add_path('/Serial', serialnumber)
         self._dbusservice.add_path('/ErrorCode', 0)
         self._dbusservice.add_path('/UpdateIndex', 0)
+         # set path StatusCode to 7=Running so VRM detects a working PV-Inverter
         self._dbusservice.add_path('/StatusCode', 7)
 
         for _path, _settings in paths.items():

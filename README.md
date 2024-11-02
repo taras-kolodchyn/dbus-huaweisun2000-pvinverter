@@ -43,18 +43,16 @@ Cooming soon
    rm main.zip
    ```
 
-
-3. Edit the config.py file
-
-   `nano /data/dbus-huaweisun2000-pvinverter/config.py`
-
-5. Check Modbus TCP Connection to gridinverter
+2. Check Modbus TCP Connection to gridinverter
 
    `python /data/dbus-huaweisun2000-pvinverter/connector_modbus.py`
 
-6. Run install.sh
+3. Run install.sh
 
    `sh /data/dbus-huaweisun2000-pvinverter/install.sh`
+
+## GUI
+You can find the settings in the Remote Console under 'settings -> pv inverter -> Huawei...'   
 
 ### Debugging
 

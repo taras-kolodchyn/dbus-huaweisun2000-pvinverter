@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Sun2000:
-    def __init__(self, host, port=502, timeout=5, wait=2, modbus_unit=0):
+    def __init__(self, host, port=502, timeout=5, wait=2, modbus_unit=3):
         self.wait = wait
         self.modbus_unit = modbus_unit
         self.inverter = ModbusTcpClient(host, port, timeout=timeout)
