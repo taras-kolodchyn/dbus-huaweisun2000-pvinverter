@@ -73,8 +73,10 @@ class DbusSun2000Service:
         with self._dbusservice as s:
 
             try:
+                logging.info("start update")
                 meter_data = self._data_connector.getData()
-
+                logging.info("end update")
+                
                 for k, v in meter_data.items():
                     logging.info(f"set {k} to {v}")
                     s[k] = v
@@ -87,6 +89,7 @@ class DbusSun2000Service:
 
             except Exception as e:
                 logging.critical('Error at %s', '_update', exc_info=e)
+                
 
         return True
 
