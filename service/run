@@ -1,5 +1,5 @@
 #!/bin/sh
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-NEWPATH="$(dirname "$SCRIPT_DIR")/dbus-huaweisun2000-pvinverter.py"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NEWPATH="$SCRIPT_DIR/../dbus-huaweisun2000-pvinverter.py"
 exec 2>&1
-python -u $NEWPATH
+exec python3 -u "$NEWPATH"
