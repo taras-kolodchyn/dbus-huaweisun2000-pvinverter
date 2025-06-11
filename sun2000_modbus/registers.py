@@ -31,9 +31,11 @@ class Register:
 
 class InverterEquipmentRegister(Enum):
     Model = Register(30000, 15, datatypes.DataType.STRING, None, None, AccessType.RO, None)
+    HardwareVersion = Register(31000, 15, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     SN = Register(30015, 10, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     PN = Register(30025, 10, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     ModelID = Register(30070, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RO, None)
+    ProtocolVersion = Register(30068, 2, datatypes.DataType.UINT32_BE, None, None, AccessType.RO, None)
     SoftwareVersion = Register(30050, 15, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     FirmwareVersion = Register(30035, 15, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     NumberOfPVStrings = Register(30071, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RO, None)
@@ -145,8 +147,8 @@ class InverterEquipmentRegister(Enum):
     PFUCharacteristicCurve = Register(40175, 21, datatypes.DataType.MULTIDATA, None, None, AccessType.RW, None)
     ReactivePowerAdjustmentTime = Register(40196, 1, datatypes.DataType.UINT16_BE, 1, "s", AccessType.RW, None)
     QUPowerPercentageToExitScheduling = Register(40198, 1, datatypes.DataType.UINT16_BE, 1, "%", AccessType.RW, None)
-    # Startup = Register(40200, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.WO, None) # disabled because not readable (AccessType.WO)
-    # Shutdown = Register(40201, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.WO, None) # disabled because not readable (AccessType.WO)
+    Startup = Register(40200, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.WO, None)
+    Shutdown = Register(40201, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.WO, None)
     GridCode = Register(42000, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RW, None)
     ReactivePowerChangeGradient = Register(42015, 2, datatypes.DataType.UINT32_BE, 1000, "%/s", AccessType.RW, None)
     ActivePowerChangeGradient = Register(42017, 2, datatypes.DataType.UINT32_BE, 1000, "%/s", AccessType.RW, None)

@@ -56,7 +56,7 @@ alert1Readable = {
 
 
 class ModbusDataCollector2000Delux:
-    def __init__(self, host='192.168.5.186', port=502, modbus_unit=3, power_correction_factor=0.995):
+    def __init__(self, host='192.168.5.186', port=502, modbus_unit=1, power_correction_factor=0.995):
         self.invSun2000 = inverter.Sun2000(host=host, port=port, modbus_unit=modbus_unit)
         self.power_correction_factor = power_correction_factor
 
@@ -116,9 +116,9 @@ class ModbusDataCollector2000Delux:
 
     def getStaticData(self):
         """
-        Collects static data from the inverter using Modbus TCP.
-        Returns a dictionary with keys such as SN, ModelID, Model, FirmwareVersion, SoftwareVersion, etc.
-        If any value cannot be read, sets it to 'unknown' and logs a warning.
+        Collects static information from the inverter using Modbus TCP.
+        Returns a dictionary with keys such as SN, ModelID, Model, FirmwareVersion, SoftwareVersion, HardwareVersion, etc.
+        If a value cannot be read, sets it to 'unknown' and logs a warning.
         """
         if not self.invSun2000.connect():
             print("Connection error Modbus TCP")
@@ -126,33 +126,37 @@ class ModbusDataCollector2000Delux:
 
         import logging
         data = {}
-        try:
-            data['Model'] = str(self.invSun2000.read_formatted(registers.InverterEquipmentRegister.Model)).replace('\0', '')
-            # Detect phase type from Model string
-            model_str = data['Model'].upper()
-            if '3' in model_str and 'KTL' in model_str:
-                data['PhaseType'] = 'Three-phase'
-            else:
-                data['PhaseType'] = 'Single-phase'
 
-            data['SN'] = self.invSun2000.read(registers.InverterEquipmentRegister.SN)
-            data['ModelID'] = self.invSun2000.read(registers.InverterEquipmentRegister.ModelID)
-
-            data['FirmwareVersion'] = self.invSun2000.read_formatted(registers.InverterEquipmentRegister.FirmwareVersion)
-            # Try reading SoftwareVersion, fallback to 'unknown' if error
+        def safe_read(register, name, formatted=False):
             try:
-                data['SoftwareVersion'] = self.invSun2000.read(registers.InverterEquipmentRegister.SoftwareVersion)
+                if formatted:
+                    return str(self.invSun2000.read_formatted(register)).replace('\0', '')
+                else:
+                    return self.invSun2000.read(register)
             except Exception as e:
-                logging.warning(f"Could not read SoftwareVersion: {e}")
-                data['SoftwareVersion'] = 'unknown'
-            logging.info(f"SoftwareVersion received: {data['SoftwareVersion']}")
-            data['NumberOfPVStrings'] = self.invSun2000.read(registers.InverterEquipmentRegister.NumberOfPVStrings)
-            data['NumberOfMPPTrackers'] = self.invSun2000.read(registers.InverterEquipmentRegister.NumberOfMPPTrackers)
-            return data
+                logging.warning(f"Could not read {name}: {e}")
+                return 'unknown'
 
-        except Exception as e:
-            logging.error(f"Problem while getting static data modbus TCP: {e}")
-            return None
+        # Main fields
+        data['Model']             = safe_read(registers.InverterEquipmentRegister.Model, 'Model', formatted=True)
+        model_str = data['Model'].upper()
+        if '3' in model_str and 'KTL' in model_str:
+            data['PhaseType'] = 'Three-phase'
+        else:
+            data['PhaseType'] = 'Single-phase'
+
+        data['SN']                = safe_read(registers.InverterEquipmentRegister.SN, 'SN')
+        data['PN']                = safe_read(registers.InverterEquipmentRegister.PN, 'PN')
+        data['ModelID']           = safe_read(registers.InverterEquipmentRegister.ModelID, 'ModelID')
+        data['FirmwareVersion']   = safe_read(registers.InverterEquipmentRegister.FirmwareVersion, 'FirmwareVersion', formatted=True)
+        data['SoftwareVersion']   = safe_read(registers.InverterEquipmentRegister.SoftwareVersion, 'SoftwareVersion')
+        data['HardwareVersion']   = safe_read(registers.InverterEquipmentRegister.HardwareVersion, 'HardwareVersion')
+        data['NumberOfPVStrings'] = safe_read(registers.InverterEquipmentRegister.NumberOfPVStrings, 'NumberOfPVStrings')
+        data['NumberOfMPPTrackers'] = safe_read(registers.InverterEquipmentRegister.NumberOfMPPTrackers, 'NumberOfMPPTrackers')
+
+        # Debug log all static data:
+        logging.info("Static inverter info collected: " + str(data))
+        return data
 
 
 

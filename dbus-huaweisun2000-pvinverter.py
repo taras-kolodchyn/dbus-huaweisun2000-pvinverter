@@ -27,10 +27,10 @@ from vedbus import VeDbusService
 
 
 class DbusSun2000Service:
-    def __init__(self, servicename, settings, paths, data_connector, serialnumber='X',
-    productname='Huawei Sun2000 PV-Inverter', firmware_version='1.0',software_version='',phase_type='Unknown'):
+    def __init__(self, servicename, settings, paths, data_connector, serialnumber='X', partnumber = 'X',
+    productname='Huawei Sun2000 PV-Inverter', firmware_version='1.0',software_version='', hardware_version='0', model_id=0, phase_type='Unknown'):
         self._dbusservice = VeDbusService(servicename, register=False)
-        # self._paths = paths
+        self._paths = paths
         self._data_connector = data_connector
 
         logging.debug("%s /DeviceInstance = %d" % (servicename, settings.get_vrm_instance()))
@@ -44,12 +44,12 @@ class DbusSun2000Service:
         # Create the mandatory objects
         self._dbusservice.add_path('/DeviceInstance', settings.get_vrm_instance())
         self._dbusservice.add_path('/ProductId', 0)  # Huawei does not have a product id
+        self._dbusservice.add_path('/ModelID', model_id)
         self._dbusservice.add_path('/ProductName', productname)
         self._dbusservice.add_path('/CustomName', settings.get("custom_name"))
         self._dbusservice.add_path('/FirmwareVersion', firmware_version)
         self._dbusservice.add_path('/Info/SoftwareVersion', software_version)
-        self._dbusservice.add_path('/HardwareVersion', 0)
-        logging.info(f"Registering /Info/PhaseType: {phase_type}")
+        self._dbusservice.add_path('/HardwareVersion', hardware_version)
         self._dbusservice.add_path('/Info/PhaseType', phase_type)
         self._dbusservice.add_path('/Connected', 1, writeable=True)
 
@@ -59,6 +59,7 @@ class DbusSun2000Service:
         self._dbusservice.add_path('/Role', "pvinverter")
         self._dbusservice.add_path('/Position', settings.get("position"))  # 0 = AC Input, 1 = AC-Out 1, AC-Out 2
         self._dbusservice.add_path('/Serial', serialnumber)
+        self._dbusservice.add_path('/Part', partnumber)
         self._dbusservice.add_path('/ErrorCode', 0)
         self._dbusservice.add_path('/UpdateIndex', 0)
          # set path StatusCode to 7=Running so VRM detects a working PV-Inverter
@@ -189,14 +190,20 @@ def main():
             '/Status': {'initial': ""},
         }
 
+        # If HardwareVersion is empty or None, assign it the value of PN
+        if not staticdata['HardwareVersion']:
+            staticdata['HardwareVersion'] = staticdata['PN']
         pvac_output = DbusSun2000Service(
             servicename='com.victronenergy.pvinverter.sun2000',
             settings=settings,
             paths=dbuspath,
             productname=staticdata['Model'],
+            model_id=staticdata['ModelID'],
             serialnumber=staticdata['SN'],
+            partnumber=staticdata['PN'],
             firmware_version=staticdata['FirmwareVersion'],
             software_version=staticdata['SoftwareVersion'],
+            hardware_version=staticdata['HardwareVersion'],
             phase_type=staticdata.get('PhaseType', 'Unknown'),
             data_connector=modbus
         )
