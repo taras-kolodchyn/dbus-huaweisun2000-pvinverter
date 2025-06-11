@@ -5,6 +5,22 @@ from dbus.mainloop.glib import DBusGMainLoop
 
 from settings import HuaweiSUN2000Settings
 
+def safe_int(val, default=0):
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        import logging
+        logging.warning(f"Modbus value is invalid: '{val}', using {default}")
+        return default
+
+def safe_float(val, default=0.0):
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        import logging
+        logging.warning(f"Modbus value is invalid: '{val}', using {default}")
+        return default
+
 state1Readable = {
     1: "standby",
     2: "grid connected",
@@ -53,24 +69,26 @@ class ModbusDataCollector2000Delux:
         data = {}
 
         dbuspath = {
-            '/Ac/Power': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.ActivePower},
-            '/Ac/L1/Current': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseACurrent},
-            '/Ac/L1/Voltage': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseAVoltage},
-            '/Ac/L2/Current': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseBCurrent},
-            '/Ac/L2/Voltage': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseBVoltage},
-            '/Ac/L3/Current': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseCCurrent},
-            '/Ac/L3/Voltage': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseCVoltage},
-            '/Dc/Power': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.InputPower},
-            '/Ac/MaxPower': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.MaximumActivePower},
+            '/Ac/Power':      {'initial': 0, "sun2000": registers.InverterEquipmentRegister.ActivePower,     "type": safe_float},
+            '/Ac/L1/Current': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseACurrent,   "type": safe_float},
+            '/Ac/L1/Voltage': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseAVoltage,   "type": safe_float},
+            '/Ac/L2/Current': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseBCurrent,   "type": safe_float},
+            '/Ac/L2/Voltage': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseBVoltage,   "type": safe_float},
+            '/Ac/L3/Current': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseCCurrent,   "type": safe_float},
+            '/Ac/L3/Voltage': {'initial': 0, "sun2000": registers.InverterEquipmentRegister.PhaseCVoltage,   "type": safe_float},
+            '/Dc/Power':      {'initial': 0, "sun2000": registers.InverterEquipmentRegister.InputPower,      "type": safe_float},
+            '/Ac/MaxPower':   {'initial': 0, "sun2000": registers.InverterEquipmentRegister.MaximumActivePower, "type": safe_float},
         }
 
         for k, v in dbuspath.items():
             s = v.get("sun2000")
-            data[k] = self.invSun2000.read(s)
+            value_type = v.get("type", safe_float)
+            raw = self.invSun2000.read(s)
+            data[k] = value_type(raw, v.get('initial', 0))
 
         state1 = self.invSun2000.read(registers.InverterEquipmentRegister.State1)
-        state1_string = ";".join([val for key, val in state1Readable.items() if int(state1)&key>0])
-        data['/Status'] = state1_string
+        state1_int = safe_int(state1)
+        state1_string = ";".join([val for key, val in state1Readable.items() if state1_int & key > 0])
 
         # data['/Ac/StatusCode'] = statuscode
 
@@ -86,7 +104,7 @@ class ModbusDataCollector2000Delux:
         data['/Ac/L2/Frequency'] = freq
         data['/Ac/L3/Frequency'] = freq
 
-        cosphi = float(self.invSun2000.read((registers.InverterEquipmentRegister.PowerFactor)))
+        cosphi = safe_float(self.invSun2000.read((registers.InverterEquipmentRegister.PowerFactor)))
         data['/Ac/L1/Power'] = cosphi * float(data['/Ac/L1/Voltage']) * float(
             data['/Ac/L1/Current']) * self.power_correction_factor
         data['/Ac/L2/Power'] = cosphi * float(data['/Ac/L2/Voltage']) * float(

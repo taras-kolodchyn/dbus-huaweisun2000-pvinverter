@@ -31,7 +31,7 @@ class HuaweiSUN2000Settings(object):
             "modbus_unit": ["/Settings/HuaweiSUN2000/ModbusUnit", 0, 0, 247, 0],
             "custom_name": ["/Settings/HuaweiSUN2000/CustomName", "Huawei SUN2000", "", "", 0],
             "position": ["/Settings/HuaweiSUN2000/Position", 0, 0, 2, 0],
-            "update_time_ms": ["/Settings/HuaweiSUN2000/UpdateTimeMS", 1000, 100, 10000000, 0],
+            "update_time_ms": ["/Settings/HuaweiSUN2000/UpdateTimeMS", 3000, 1000, 100000, 0],
             "power_correction_factor": ["/Settings/HuaweiSUN2000/PowerCorrectionFactor", 0.995, 0.001, 100.0, 0],
             # "HuaweiSUN2000" is our unique id for the moment. This needs some more thought if more than one inverter shall be supported.
             # Unfortunately we can't use the serial number, because we need the config in order to get that one, so we have a catch-22.
@@ -58,3 +58,4 @@ class HuaweiSUN2000Settings(object):
 
     def get_vrm_instance(self):
         return int(self.settings["vrm_instance"].split(":")[1])
+

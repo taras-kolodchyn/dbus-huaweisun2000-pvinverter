@@ -10,10 +10,14 @@ logging.basicConfig(level=logging.INFO)
 
 
 class Sun2000:
-    def __init__(self, host, port=502, timeout=5, wait=2, modbus_unit=3):
+    def __init__(self, host, port=502, timeout=5, wait=2, modbus_unit=3, retries=3, retry_delay=1):
+        # 'retries' - number of attempts to read a register in case of errors
+        # 'retry_delay' - delay in seconds between retry attempts
         self.wait = wait
         self.modbus_unit = modbus_unit
         self.inverter = ModbusTcpClient(host, port, timeout=timeout)
+        self.retries = retries
+        self.retry_delay = retry_delay
 
     def connect(self):
         if not self.isConnected():
@@ -31,8 +35,8 @@ class Sun2000:
     def disconnect(self):
         """Close the underlying tcp socket"""
         # Some Sun2000 models with the SDongle WLAN-FE require the TCP connection to be closed
-        # as soon as possible. Leaving the TCP connection open for an extended time may cause 
-        # dongle reboots and/or FusionSolar portal updates to be delayed or even paused. 
+        # as soon as possible. Leaving the TCP connection open for an extended time may cause
+        # dongle reboots and/or FusionSolar portal updates to be delayed or even paused.
         self.inverter.close()
 
     def isConnected(self):
@@ -40,19 +44,37 @@ class Sun2000:
         return self.inverter.is_socket_open()
 
     def read_raw_value(self, register):
+        # Try to read the register value with several retries in case of communication errors
         if not self.isConnected():
             raise ValueError('Inverter is not connected')
 
-        try:
-            register_value = self.inverter.read_holding_registers(register.value.address, register.value.quantity, unit=self.modbus_unit)
-            if type(register_value) == ModbusIOException:
-                logging.error("Inverter modbus unit did not respond")
-                raise register_value
-        except ConnectionException:
-            logging.error("A connection error occurred")
-            raise
-
-        return datatypes.decode(register_value.encode()[1:], register.value.data_type)
+        attempt = 0
+        last_exception = None
+        while attempt < self.retries:
+            try:
+                register_value = self.inverter.read_holding_registers(register.value.address, register.value.quantity, unit=self.modbus_unit)
+                if type(register_value) == ModbusIOException:
+                    logging.error("Inverter modbus unit did not respond")
+                    raise register_value
+                # If successful, decode and return the value
+                return datatypes.decode(register_value.encode()[1:], register.value.data_type)
+            except (ConnectionException, ModbusIOException) as ex:
+                last_exception = ex
+                logging.error(f"Read attempt {attempt + 1} failed: {ex}")
+                time.sleep(self.retry_delay)
+                # Try to reconnect before next attempt
+                try:
+                    self.disconnect()
+                except Exception as disconnect_ex:
+                    logging.warning(f"Error while disconnecting: {disconnect_ex}")
+                try:
+                    self.connect()
+                except Exception as connect_ex:
+                    logging.warning(f"Error while reconnecting: {connect_ex}")
+            attempt += 1
+        # All retries failed, raise the last exception
+        logging.critical("All retries to read register failed")
+        raise last_exception if last_exception else Exception("Unknown error during register read")
 
     def read(self, register):
         raw_value = self.read_raw_value(register)
@@ -73,6 +95,7 @@ class Sun2000:
             return value
 
     def read_range(self, start_address, quantity=0, end_address=0):
+        # Try to read a range of registers with retries
         if quantity == 0 and end_address == 0:
             raise ValueError("Either parameter quantity or end_address is required and must be greater than 0")
         if quantity != 0 and end_address != 0:
@@ -85,13 +108,32 @@ class Sun2000:
 
         if end_address != 0:
             quantity = end_address - start_address + 1
-        try:
-            register_range_value = self.inverter.read_holding_registers(start_address, quantity, unit=self.modbus_unit)
-            if type(register_range_value) == ModbusIOException:
-                logging.error("Inverter modbus unit did not respond")
-                raise register_range_value
-        except ConnectionException:
-            logging.error("A connection error occurred")
-            raise
 
-        return datatypes.decode(register_range_value.encode()[1:], datatypes.DataType.MULTIDATA)
+        attempt = 0
+        last_exception = None
+        while attempt < self.retries:
+            try:
+                register_range_value = self.inverter.read_holding_registers(start_address, quantity, unit=self.modbus_unit)
+                if type(register_range_value) == ModbusIOException:
+                    logging.error("Inverter modbus unit did not respond")
+                    raise register_range_value
+                # If successful, decode and return the value
+                return datatypes.decode(register_range_value.encode()[1:], datatypes.DataType.MULTIDATA)
+            except (ConnectionException, ModbusIOException) as ex:
+                last_exception = ex
+                logging.error(f"Range read attempt {attempt + 1} failed: {ex}")
+                time.sleep(self.retry_delay)
+                # Try to reconnect before next attempt
+                try:
+                    self.disconnect()
+                except Exception as disconnect_ex:
+                    logging.warning(f"Error while disconnecting: {disconnect_ex}")
+                try:
+                    self.connect()
+                except Exception as connect_ex:
+                    logging.warning(f"Error while reconnecting: {connect_ex}")
+            attempt += 1
+        # All retries failed, raise the last exception
+        logging.critical("All retries to read range of registers failed")
+        raise last_exception if last_exception else Exception("Unknown error during register range read")
+
