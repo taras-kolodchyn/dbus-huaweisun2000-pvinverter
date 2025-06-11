@@ -27,7 +27,8 @@ from vedbus import VeDbusService
 
 
 class DbusSun2000Service:
-    def __init__(self, servicename, settings, paths, data_connector, serialnumber='X',productname='Huawei Sun2000 PV-Inverter', firmware_version='1.0',software_version=''):
+    def __init__(self, servicename, settings, paths, data_connector, serialnumber='X',
+    productname='Huawei Sun2000 PV-Inverter', firmware_version='1.0',software_version='',phase_type='Unknown'):
         self._dbusservice = VeDbusService(servicename, register=False)
         # self._paths = paths
         self._data_connector = data_connector
@@ -48,7 +49,8 @@ class DbusSun2000Service:
         self._dbusservice.add_path('/FirmwareVersion', firmware_version)
         self._dbusservice.add_path('/Info/SoftwareVersion', software_version)
         self._dbusservice.add_path('/HardwareVersion', 0)
-     
+        logging.info(f"Registering /Info/PhaseType: {phase_type}")
+        self._dbusservice.add_path('/Info/PhaseType', phase_type)
         self._dbusservice.add_path('/Connected', 1, writeable=True)
 
 
@@ -195,6 +197,7 @@ def main():
             serialnumber=staticdata['SN'],
             firmware_version=staticdata['FirmwareVersion'],
             software_version=staticdata['SoftwareVersion'],
+            phase_type=staticdata.get('PhaseType', 'Unknown'),
             data_connector=modbus
         )
 

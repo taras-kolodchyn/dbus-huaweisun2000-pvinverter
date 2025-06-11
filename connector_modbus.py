@@ -127,9 +127,17 @@ class ModbusDataCollector2000Delux:
         import logging
         data = {}
         try:
+            data['Model'] = str(self.invSun2000.read_formatted(registers.InverterEquipmentRegister.Model)).replace('\0', '')
+            # Detect phase type from Model string
+            model_str = data['Model'].upper()
+            if '3' in model_str and 'KTL' in model_str:
+                data['PhaseType'] = 'Three-phase'
+            else:
+                data['PhaseType'] = 'Single-phase'
+
             data['SN'] = self.invSun2000.read(registers.InverterEquipmentRegister.SN)
             data['ModelID'] = self.invSun2000.read(registers.InverterEquipmentRegister.ModelID)
-            data['Model'] = str(self.invSun2000.read_formatted(registers.InverterEquipmentRegister.Model)).replace('\0', '')
+
             data['FirmwareVersion'] = self.invSun2000.read_formatted(registers.InverterEquipmentRegister.FirmwareVersion)
             # Try reading SoftwareVersion, fallback to 'unknown' if error
             try:
