@@ -34,6 +34,7 @@ class InverterEquipmentRegister(Enum):
     SN = Register(30015, 10, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     PN = Register(30025, 10, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     ModelID = Register(30070, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RO, None)
+    FirmwareVersion = Register(30035, 15, datatypes.DataType.STRING, None, None, AccessType.RO, None)
     NumberOfPVStrings = Register(30071, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RO, None)
     NumberOfMPPTrackers = Register(30072, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RO, None)
     RatedPower = Register(30073, 2, datatypes.DataType.UINT32_BE, 1, "W", AccessType.RO, None)
@@ -339,3 +340,4 @@ class MeterEquipmentRegister(Enum):
     APhaseActivePower = Register(37132, 2, datatypes.DataType.INT32_BE, 1, "W", AccessType.RO, None)
     BPhaseActivePower = Register(37134, 2, datatypes.DataType.INT32_BE, 1, "W", AccessType.RO, None)
     CPhaseActivePower = Register(37136, 2, datatypes.DataType.INT32_BE, 1, "W", AccessType.RO, None)
+

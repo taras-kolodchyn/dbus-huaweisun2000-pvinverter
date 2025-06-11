@@ -106,8 +106,8 @@ class ModbusDataCollector2000Delux:
             data = {}
             data['SN'] = self.invSun2000.read(registers.InverterEquipmentRegister.SN)
             data['ModelID'] = self.invSun2000.read(registers.InverterEquipmentRegister.ModelID)
-            data['Model'] = str(self.invSun2000.read_formatted(registers.InverterEquipmentRegister.Model)).replace('\0',
-                                                                                                                   '')
+            data['Model'] = str(self.invSun2000.read_formatted(registers.InverterEquipmentRegister.Model)).replace('\0', '')
+            data['FirmwareVersion'] = self.invSun2000.read_formatted(registers.InverterEquipmentRegister.FirmwareVersion)
             data['NumberOfPVStrings'] = self.invSun2000.read(registers.InverterEquipmentRegister.NumberOfPVStrings)
             data['NumberOfMPPTrackers'] = self.invSun2000.read(registers.InverterEquipmentRegister.NumberOfMPPTrackers)
             return data
@@ -136,3 +136,4 @@ if __name__ == "__main__":
 
         for k, v in datata.items():
             print(f"{k}: {v}")
+
