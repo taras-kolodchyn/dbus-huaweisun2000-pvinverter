@@ -27,7 +27,7 @@ from vedbus import VeDbusService
 
 
 class DbusSun2000Service:
-    def __init__(self, servicename, settings, paths, data_connector, serialnumber='X',productname='Huawei Sun2000 PV-Inverter', firmware_version='1.0'):
+    def __init__(self, servicename, settings, paths, data_connector, serialnumber='X',productname='Huawei Sun2000 PV-Inverter', firmware_version='1.0',software_version=''):
         self._dbusservice = VeDbusService(servicename, register=False)
         # self._paths = paths
         self._data_connector = data_connector
@@ -46,6 +46,7 @@ class DbusSun2000Service:
         self._dbusservice.add_path('/ProductName', productname)
         self._dbusservice.add_path('/CustomName', settings.get("custom_name"))
         self._dbusservice.add_path('/FirmwareVersion', firmware_version)
+        self._dbusservice.add_path('/Info/SoftwareVersion', software_version)
         self._dbusservice.add_path('/HardwareVersion', 0)
      
         self._dbusservice.add_path('/Connected', 1, writeable=True)
@@ -67,7 +68,7 @@ class DbusSun2000Service:
                 onchangecallback=self._handlechangedvalue)
 
         self._dbusservice.register()
-        
+
         GLib.timeout_add(settings.get('update_time_ms'), self._update)  # pause in ms before the next request
 
     def _update(self):
@@ -193,6 +194,7 @@ def main():
             productname=staticdata['Model'],
             serialnumber=staticdata['SN'],
             firmware_version=staticdata['FirmwareVersion'],
+            software_version=staticdata['SoftwareVersion'],
             data_connector=modbus
         )
 

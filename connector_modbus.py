@@ -115,23 +115,35 @@ class ModbusDataCollector2000Delux:
         return data
 
     def getStaticData(self):
-        # the connect() method internally checks whether there's already a connection
+        """
+        Collects static data from the inverter using Modbus TCP.
+        Returns a dictionary with keys such as SN, ModelID, Model, FirmwareVersion, SoftwareVersion, etc.
+        If any value cannot be read, sets it to 'unknown' and logs a warning.
+        """
         if not self.invSun2000.connect():
             print("Connection error Modbus TCP")
             return None
 
+        import logging
+        data = {}
         try:
-            data = {}
             data['SN'] = self.invSun2000.read(registers.InverterEquipmentRegister.SN)
             data['ModelID'] = self.invSun2000.read(registers.InverterEquipmentRegister.ModelID)
             data['Model'] = str(self.invSun2000.read_formatted(registers.InverterEquipmentRegister.Model)).replace('\0', '')
             data['FirmwareVersion'] = self.invSun2000.read_formatted(registers.InverterEquipmentRegister.FirmwareVersion)
+            # Try reading SoftwareVersion, fallback to 'unknown' if error
+            try:
+                data['SoftwareVersion'] = self.invSun2000.read(registers.InverterEquipmentRegister.SoftwareVersion)
+            except Exception as e:
+                logging.warning(f"Could not read SoftwareVersion: {e}")
+                data['SoftwareVersion'] = 'unknown'
+            logging.info(f"SoftwareVersion received: {data['SoftwareVersion']}")
             data['NumberOfPVStrings'] = self.invSun2000.read(registers.InverterEquipmentRegister.NumberOfPVStrings)
             data['NumberOfMPPTrackers'] = self.invSun2000.read(registers.InverterEquipmentRegister.NumberOfMPPTrackers)
             return data
 
-        except:
-            print("Problem while getting static data modbus TCP")
+        except Exception as e:
+            logging.error(f"Problem while getting static data modbus TCP: {e}")
             return None
 
 
