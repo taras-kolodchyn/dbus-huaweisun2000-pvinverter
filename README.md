@@ -56,6 +56,7 @@ unzip main.zip
 mv dbus-huaweisun2000-pvinverter-main dbus-huaweisun2000-pvinverter
 chmod +x dbus-huaweisun2000-pvinverter/install.sh
 sh dbus-huaweisun2000-pvinverter/install.sh
+rm main.zip
 ```
 
 # Usage
