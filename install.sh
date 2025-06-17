@@ -46,11 +46,24 @@ grep -qxF "$SCRIPT_DIR/install.sh" $filename || echo "$SCRIPT_DIR/install.sh" >>
 # The "PV inverters" page in Settings is somewhat specific for Fronius. Let's change that.
 invertersSettingsFile="/opt/victronenergy/gui/qml/PageSettingsFronius.qml"
 
-if (( $(grep -c "PageSettingsHuaweiSUN2000" $invertersSettingsFile) > 0)); then
-    echo "INFO: $invertersSettingsFile seems already modified for HuaweiSUN2000 -- skipping modification"
+# Backup the original PageSettingsFronius.qml file with a timestamp before modification
+backupFile="${invertersSettingsFile}_backup_$(date +%Y%m%d%H%M%S)"
+echo "INFO: Creating backup of $invertersSettingsFile at $backupFile"
+cp "$invertersSettingsFile" "$backupFile"
+
+# Remove all old HuaweiSUN2000 related blocks including their surrounding braces.
+# This removes any block containing 'menuHuaweiSUN2000', 'PageSettingsHuaweiSUN2000', or any line containing 'HuaweiSUN2000'.
+echo "INFO: Removing old HuaweiSUN2000 related blocks from $invertersSettingsFile"
+sed -i -e '/menuHuaweiSUN2000/,/}/d' \
+       -e '/PageSettingsHuaweiSUN2000/,/}/d' \
+       -e '/HuaweiSUN2000/,/}/d' "$invertersSettingsFile"
+
+# Add new HuaweiSUN2000 menu entry only if it is not already present
+if ! grep -q "PageSettingsHuaweiSUN2000" "$invertersSettingsFile"; then
+    echo "INFO: Adding HuaweiSUN2000 menu entry to $invertersSettingsFile"
+    sed -i "/model: VisibleItemModel/ r $SCRIPT_DIR/gui/menu_item.txt" "$invertersSettingsFile"
 else
-    echo "INFO: Adding menu entry to $invertersSettingsFile"
-    sed -i "/model: VisibleItemModel/ r $SCRIPT_DIR/gui/menu_item.txt" $invertersSettingsFile
+    echo "INFO: HuaweiSUN2000 menu already present in $invertersSettingsFile -- skipping modification"
 fi
 
 cp -av $SCRIPT_DIR/gui/*.qml /opt/victronenergy/gui/qml/
