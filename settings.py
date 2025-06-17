@@ -4,7 +4,6 @@ import dbus
 import logging
 import os
 import sys
-from settingsdevice import SettingsDevice  # noqa: E402
 
 sys.path.insert(
     1,
@@ -13,6 +12,7 @@ sys.path.insert(
         "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
     ),
 )
+from settingsdevice import SettingsDevice  # noqa: E402
 
 
 class SystemBus(dbus.bus.BusConnection):

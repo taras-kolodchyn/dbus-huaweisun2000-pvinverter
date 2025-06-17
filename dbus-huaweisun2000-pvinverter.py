@@ -11,7 +11,6 @@ initial value, write to the dummy data via the dbus. See example.
 
 https://github.com/victronenergy/dbus_vebus_to_pvinverter/tree/master/test
 """
-
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 from connector_modbus import ModbusDataCollector2000Delux

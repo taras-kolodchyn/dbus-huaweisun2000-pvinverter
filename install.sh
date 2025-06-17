@@ -1,5 +1,18 @@
 #!/bin/bash
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+# Handle lock file for log directory (prevents installer hangs)
+LOCK_FILE="/var/log/dbus-huaweisun2000/lock"
+if [ -f "$LOCK_FILE" ]; then
+    echo "INFO: Found lock file: $LOCK_FILE"
+    PID=$(fuser "$LOCK_FILE" 2>/dev/null)
+    if [ ! -z "$PID" ]; then
+        echo "INFO: Killing process holding lock: $PID"
+        kill -9 $PID
+        sleep 1
+    fi
+    echo "INFO: Removing lock file: $LOCK_FILE"
+    rm -f "$LOCK_FILE"
+fi
 echo "SCRIPT_DIR: $SCRIPT_DIR"
 SERVICE_NAME=$(basename $SCRIPT_DIR)
 echo "SERVICE_NAME: $SERVICE_NAME"
@@ -44,4 +57,3 @@ cp -av $SCRIPT_DIR/gui/*.qml /opt/victronenergy/gui/qml/
 
 # As we've modified the GUI, we need to restart it
 svc -t /service/start-gui
-
