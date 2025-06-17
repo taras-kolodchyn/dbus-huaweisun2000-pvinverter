@@ -1,126 +1,133 @@
 # dbus-huaweisun2000-pvinverter
 
-dbus driver for victron cerbo gx / venus os for huawei sun 2000 inverter
+A D-Bus driver for integrating Huawei SUN2000 inverters into Victron Cerbo GX / Venus OS.
 
-## Purpose
+# Overview
 
-This script is intended to help integrate a Huawei Sun 2000 inverter into the Venus OS and thus also into the VRM
-portal.
+This project provides seamless integration of Huawei SUN2000 PV inverters with Victron Venus OS and the VRM Portal.  
+It allows Venus OS to monitor key inverter parameters over Modbus TCP using the built-in WiFi of the inverter, without requiring additional hardware.
 
-I use a Cerbo GX, which I have integrated via Ethernet in the house network. I used the WiFi of the device to connect to
-the internal WiFi of the Huawei Sun 2000. Attention: No extra dongle is necessary! You can use the integrated Wifi,
-which is actually intended for configuration with the Huawei app (Fusion App or Sun2000 App). The advantage is that no
-additional hardware needs to be purchased and the inverter does not need to be connected to the Internet.
+# Table of Contents
 
-To further use the data, the mqtt broker from Venus OS can be used.
+- [Features](#features)  
+- [Requirements](#requirements)  
+- [Installation](#installation)  
+- [Usage](#usage)  
+- [Updating](#updating)  
+- [Uninstall](#uninstall)  
+- [Screenshots](#screenshots)  
+- [Troubleshooting](#troubleshooting)  
+- [License](#license)  
 
-## Todo
+# Features
 
-- [ ] better logging
-- [x] find out why the most values are missing in the view
-- [x] repair modelname (custom name in config)
-- [x] possibility to change settings via gui
-- [ ] alarm, state
-- [ ] more values: temperature, efficiency
-- [ ] clean code
+- Reads live data from Huawei SUN2000 inverters (tested with various models)  
+- Supports Venus OS devices (e.g., Cerbo GX)  
+- Full VRM Portal integration  
+- Clean D-Bus interface for easy access by other Venus OS apps  
+- Simple installation and update scripts  
+- Automatic reconnection and error handling  
+- Open source, easily extendable  
 
-Cooming soon
+# Requirements
 
-## Installation
+- Venus OS device (e.g., Cerbo GX, Raspberry Pi with Venus OS)  
+- Huawei SUN2000 inverter (any recent model)  
+- Access to the inverter’s WiFi or LAN  
+- Python 3.x (standard on Venus OS)  
+- TCP port 502 must be open and accessible between Venus OS and the inverter for Modbus TCP communication  
 
-1. Copy the full project directory to the /data/etc folder on your venus:
+# Installation
 
-    - /data/dbus-huaweisun2000-pvinverter/
+Copy or clone the repository to your Venus OS device:  
 
-   Info: The /data directory persists data on venus os devices while updating the firmware
+```bash
+scp -r dbus-huaweisun2000-pvinverter root@venus:/data/
+```
 
-   Easy way:
-   ```
-   wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip
-   unzip main.zip -d /data
-   mv /data/dbus-huaweisun2000-pvinverter-main /data/dbus-huaweisun2000-pvinverter
-   chmod a+x /data/dbus-huaweisun2000-pvinverter/install.sh
-   rm main.zip
-   ```
+Replace `venus` with your Venus OS device's IP address or hostname.  
 
+Or download directly on the device:  
 
-3. Edit the config.py file
+```bash
+cd /data
+wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip
+unzip main.zip
+mv dbus-huaweisun2000-pvinverter-main dbus-huaweisun2000-pvinverter
+chmod +x dbus-huaweisun2000-pvinverter/install.sh
+sh dbus-huaweisun2000-pvinverter/install.sh
+```
 
-   `nano /data/dbus-huaweisun2000-pvinverter/config.py`
+# Usage
 
-5. Check Modbus TCP Connection to gridinverter
+- Service will auto-start after installation.  
+- To check status: `svstat /service/dbus-huaweisun2000-pvinverter`  
+- For debugging, run the main script manually:  
+  `python /data/dbus-huaweisun2000-pvinverter/dbus-huaweisun2000-pvinverter.py`  
+- Service logs can be viewed for troubleshooting and monitoring (see Troubleshooting section for details).  
+- Service management commands (start, stop, restart) can be used to control the driver as needed.  
 
-   `python /data/dbus-huaweisun2000-pvinverter/connector_modbus.py`
+# Updating
 
-3. Run install.sh
+After updating files or pulling new changes:  
 
-   `sh /data/dbus-huaweisun2000-pvinverter/install.sh`
+```bash
+sh /data/dbus-huaweisun2000-pvinverter/restart.sh
+```
 
-### Debugging
+# Uninstall
 
-You can check the status of the service with svstat:
-
-`svstat /service/dbus-huaweisun2000-pvinverter`
-
-It will show something like this:
-
-`/service/dbus-huaweisun2000-pvinverter: up (pid 10078) 325 seconds`
-
-If the number of seconds is always 0 or 1 or any other small number, it means that the service crashes and gets
-restarted all the time.
-
-When you think that the script crashes, start it directly from the command line:
-
-`python /data/dbus-huaweisun2000-pvinverter/dbus-huaweisun2000-pvinverter.py`
-
-Also useful:
-
-`tail -f /var/log/dbus-huaweisun2000/current | tai64nlocal`
-
-### Stop the script
-
-`svc -d /service/dbus-huaweisun2000-pvinverter`
-
-### Start the script
-
-`svc -u /service/dbus-huaweisun2000-pvinverter`
-
-
-### Restart the script
-
-If you want to restart the script, for example after changing it, just run the following command:
-
-`sh /data/dbus-huaweisun2000-pvinverter/restart.sh`
-
-## Uninstall the script
-
-Run
-
-   ```
+```bash
 sh /data/dbus-huaweisun2000-pvinverter/uninstall.sh
 rm -r /data/dbus-huaweisun2000-pvinverter/
-   ```
+```
 
-# Examples
+# Screenshots
 
-![VRM-01](img/VRM-01.png)
+## New UI
 
-![VRM-02](img/VRM-02.png)
+_Main page: Live inverter status and summary_  
+- ![New UI Main Overview](img/new-ui/main-ui-1.png "New UI Main Overview")
 
+_Phase details and energy history_  
+- ![New UI Details](img/new-ui/main-ui-2.png "New UI Phase Details and Energy History")
 
-# Thank you
-## Contributers
+_Device details_  
+- ![New UI Settings](img/new-ui/main-ui-3.png "New UI Device Settings")  
 
+*See all screenshots in the [img/new-ui](img/new-ui/) folder.*
 
+## VRM Portal
 
-## Used libraries
+_Main PV inverter page in VRM portal_  
+- ![VRM Portal Main Page](img/vrm/vrm-01.png "VRM Portal Main PV Inverter Page")
 
-modified verion of https://github.com/olivergregorius/sun2000_modbus
+_Devices page in VRM portal_  
+- ![VRM Portal Devices Page](img/vrm/vrm-02.png "VRM Portal Devices Page")
 
-## this project is inspired by
+*See all screenshots in the [img/vrm](img/vrm/) folder.*
 
-https://github.com/RalfZim/venus.dbus-fronius-smartmeter
+## Classic UI
 
-https://github.com/fabian-lauer/dbus-shelly-3em-smartmeter.git
+_Classic UI: Main screen_  
+- ![Classic UI Main Screen](img/classic-ui/classic-ui-1.png "Classic UI Main Screen")  
 
-https://github.com/victronenergy/velib_python.git
+_Classic UI: Inverter details_  
+- ![Classic UI Details](img/classic-ui/classic-ui-2.png "Classic UI Inverter Details")  
+
+*See all screenshots in the [img/classic-ui](img/classic-ui/) folder.*
+
+# Troubleshooting
+
+- Check logs by running:  
+  ```bash
+  tail -f /var/log/dbus-huaweisun2000/current | tai64nlocal
+  ```  
+  This will show real-time service logs with human-readable timestamps.  
+- If the service keeps restarting, try running the main script manually to see error messages directly.  
+- No data appearing in VRM Portal? Verify the Modbus settings including inverter IP address, TCP port (default 502), and Modbus unit ID are correctly configured.  
+- Ensure network connectivity between Venus OS and the inverter is stable and that TCP port 502 is not blocked by firewalls.  
+
+# License
+
+This project is licensed under the [MIT License](LICENSE).
