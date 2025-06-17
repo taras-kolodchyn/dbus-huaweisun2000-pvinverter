@@ -21,13 +21,14 @@ It allows Venus OS to monitor key inverter parameters over Modbus TCP using the 
 
 # Features
 
-- Reads live data from Huawei SUN2000 inverters (tested with various models)  
+- Reads live data from Huawei SUN2000 inverters 
 - Supports Venus OS devices (e.g., Cerbo GX)  
 - Full VRM Portal integration  
 - Clean D-Bus interface for easy access by other Venus OS apps  
 - Simple installation and update scripts  
 - Automatic reconnection and error handling  
 - Open source, easily extendable  
+
 
 # Requirements
 
@@ -36,6 +37,38 @@ It allows Venus OS to monitor key inverter parameters over Modbus TCP using the 
 - Access to the inverter’s WiFi or LAN  
 - Python 3.x (standard on Venus OS)  
 - TCP port 502 must be open and accessible between Venus OS and the inverter for Modbus TCP communication  
+
+## Compatibility & Tested Devices
+
+> **Note:**  
+> Venus OS firmware versions **below v3.60 are not supported** and have not been tested.  
+> Please ensure your device is running Venus OS v3.60 or higher for proper operation.
+
+This integration was tested on the following hardware and firmware versions:
+
+- **Victron Cerbo GX**
+  - *Venus OS firmware:* **v3.60**
+- **Huawei Inverter:**
+  - *Model:* **SUN2000-30KTL-M3**
+
+Other recent Huawei SUN2000 inverters should also be compatible if they support Modbus TCP.
+If you successfully use this integration with other hardware versions or firmware, feel free to open an issue or a pull request to update the list!
+
+## Version Compatibility
+
+This project provides separate service releases for different Venus OS firmware versions.
+
+| Service Release | Supported Venus OS Firmware| Status                |
+|-----------------|----------------------------|-----------------------|
+| **v1.0.0+**     | v3.60 and above            | Recommended/Supported |
+
+
+> **Note:**  
+> Firmware versions below **v3.60** are *not* supported in the main branch.  
+> If you are running an older Venus OS version, please use the appropriate legacy service release.
+
+If you are unsure which version to use, check your Cerbo GX firmware version (`Settings → Device → Firmware`).  
+If you successfully use this integration with older firmware, please report your findings via an issue or pull request!
 
 # Installation
 
