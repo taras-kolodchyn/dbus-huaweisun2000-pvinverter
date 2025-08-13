@@ -18,6 +18,8 @@ from settings import HuaweiSUN2000Settings
 
 # our own packages from victron
 from vedbus import VeDbusService
+import vedbus
+
 
 import platform
 import logging
@@ -33,6 +35,8 @@ sys.path.insert(
         "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
     ),
 )  # noqa: E402
+
+print("VEDBUS FILE:", vedbus.__file__)
 
 
 class DbusSun2000Service:
@@ -50,8 +54,11 @@ class DbusSun2000Service:
         hardware_version="0",
         model_id=0,
         phase_type="Unknown",
+        *,
+        service_factory=VeDbusService,
+        timeout_add=GLib.timeout_add,
     ):
-        self._dbusservice = VeDbusService(servicename, register=False)
+        self._dbusservice = service_factory(servicename, register=False)
         self._paths = paths
         self._data_connector = data_connector
 
@@ -104,7 +111,7 @@ class DbusSun2000Service:
 
         self._dbusservice.register()
 
-        GLib.timeout_add(
+        timeout_add(
             settings.get("update_time_ms"),
             self._update,
         )  # pause in ms before the next request

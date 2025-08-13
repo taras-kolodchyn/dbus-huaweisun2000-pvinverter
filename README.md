@@ -3,7 +3,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/taras-kolodchyn/dbus-huaweisun2000-pvinverter)](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases)
 ![Platform](https://img.shields.io/badge/platform-Venus%20OS%20(Cerbo%20GX)-informational)
-[![Issues](https://img.shields.io/github/issues/taras-kolodchyn/dbus-huaweisun2000-pvinverter)](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/issues)
+[![Python Version](https://img.shields.io/badge/python-3.12.9-blue.svg)](https://www.python.org/downloads/release/python-3129/)
+[![Build Status](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/actions/workflows/python-ci.yml/badge.svg?branch=main)](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/actions/workflows/python-ci.yml)
+![Last Commit](https://img.shields.io/github/last-commit/taras-kolodchyn/dbus-huaweisun2000-pvinverter)
+![Commit Activity](https://img.shields.io/github/commit-activity/m/taras-kolodchyn/dbus-huaweisun2000-pvinverter)
+![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)
+![GitHub all releases](https://img.shields.io/github/downloads/taras-kolodchyn/dbus-huaweisun2000-pvinverter/total)
+![GitHub issues](https://img.shields.io/github/issues/taras-kolodchyn/dbus-huaweisun2000-pvinverter)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/taras-kolodchyn/dbus-huaweisun2000-pvinverter)
 
 > **A D-Bus driver for seamless integration of Huawei SUN2000 inverters into Victron Cerbo GX / Venus OS**
 
@@ -90,6 +97,21 @@ sh dbus-huaweisun2000-pvinverter/install.sh
 - **Logs:**  
   `tail -f /var/log/dbus-huaweisun2000/current | tai64nlocal`
 
+## ⚠️ New UI Settings Notice
+
+As of Venus OS v3.60–v3.64, the **New UI (GUI‑v2)** does not display the full settings menu for third‑party PV inverter drivers.  
+If you need to change the inverter’s Modbus host, port, unit, or position:
+
+- **Use the Classic UI**:  
+  Go to *Menu → Settings → PV Inverters → Huawei SUN2000*
+
+- **Or change values directly via D‑Bus** (Remote Console → `dbus-spy`):  
+  1. Open `com.victronenergy.pvinverter.sun2000`  
+  2. Edit `/Position` (0 = AC Input, 1 = AC‑Out 1, 2 = AC‑Out 2)  
+  3. Update Modbus settings under `com.victronenergy.settings`
+
+Once Victron adds support for custom settings pages in the New UI, these options will appear directly there.
+
 ---
 
 ## 🔄 Updating
@@ -149,8 +171,19 @@ MIT License. See [LICENSE](LICENSE).
 
 ## ☕ Support
 
+If you find this project useful and want to support its development, you can help in the following ways:
+
+- **Star the repository** ⭐ — It helps others discover the project.  
+- **Report bugs or request features** via [GitHub Issues](../../issues).  
+- **Join discussions** in the [GitHub Discussions](../../discussions).  
+- **Contribute code** — See the [Contributing](#-contributing) section.  
 
 ---
+
+### 💖 Direct Support
+
+[![Buy Me a Coffee](https://img.shields.io/badge/☕_Buy_Me_a_Coffee-FE8133?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/taras.kolodchyn)
+[![Support via PrivatBank](https://img.shields.io/badge/🇺🇦_Support-via_PrivatBank-0057B7?style=for-the-badge&labelColor=FFD700&logo=paypal&logoColor=white)](https://www.privat24.ua/send/h21hq)
 
 ## 🤝 Contributing
 
