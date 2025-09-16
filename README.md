@@ -36,7 +36,7 @@ Get detailed monitoring, energy analytics, and remote diagnostics — all in one
 
 ## 📦 Requirements
 
-- **Victron Cerbo GX** or compatible device with Venus OS (**v3.60 – v3.65** verified)
+- **Victron Cerbo GX** or compatible device with Venus OS (**v3.60 – v3.66** verified)
 - **Huawei SUN2000 inverter** (any recent model)
 - **Inverter WiFi or LAN access** (Modbus TCP port 502 open)
 - **Python 3.x** (pre-installed on Venus OS)
@@ -49,7 +49,7 @@ Get detailed monitoring, energy analytics, and remote diagnostics — all in one
 
 | Device           | Version                       | Status         |
 |------------------|-------------------------------|----------------|
-| Cerbo GX         | Venus OS v3.60 – v3.65        | Supported      |
+| Cerbo GX         | Venus OS v3.60 – v3.66        | Supported      |
 | SUN2000-30KTL-M3 | Latest firmware               | Supported      |
 
 - Venus OS versions 3.60–3.65 have been verified as working.
@@ -99,7 +99,7 @@ sh dbus-huaweisun2000-pvinverter/install.sh
 
 ## ⚠️ New UI Settings Notice
 
-As of Venus OS v3.60–v3.65, the **New UI (GUI‑v2)** does not display the full settings menu for third‑party PV inverter drivers.  
+As of Venus OS v3.60–v3.66, the **New UI (GUI‑v2)** does not display the full settings menu for third‑party PV inverter drivers.  
 If you need to change the inverter’s Modbus host, port, unit, or position:
 
 - **Use the Classic UI**:  
