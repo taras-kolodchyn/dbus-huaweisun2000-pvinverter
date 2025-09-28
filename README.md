@@ -93,7 +93,7 @@ sh dbus-huaweisun2000-pvinverter/install.sh
 - Service autostarts after installation.
 - **Check status:** `svstat /service/dbus-huaweisun2000-pvinverter`
 - **Manual debug:**  
-  `python /data/dbus-huaweisun2000-pvinverter/dbus-huaweisun2000-pvinverter.py`
+  `PYTHONPATH=/data/dbus-huaweisun2000-pvinverter/src python -m dbus_huaweisun2000_pvinverter`
 - **Logs:**  
   `tail -f /var/log/dbus-huaweisun2000/current | tai64nlocal`
 
@@ -163,6 +163,75 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
 
 ---
 
+## ⚙️ Configuration
+
+- **Runtime log level** — override the default `DEBUG` output by exporting
+  `DBUS_HUAWEISUN2000_LOGLEVEL` (e.g. `INFO`, `WARNING`, or a numeric level) before
+  launching the service.
+- **Power correction factor** — continue to use the GUI/D-Bus setting so the factor
+  persists across restarts.
+- **Modbus override (dev mode)** — set `DBUS_HUAWEISUN2000_MODBUS_HOST`,
+  `DBUS_HUAWEISUN2000_MODBUS_PORT`, or `DBUS_HUAWEISUN2000_MODBUS_UNIT` to point the
+  driver at a simulator such as the Docker Compose stack described below.
+
+---
+
+## 🛠 Development
+
+### Project layout
+
+- `src/dbus_huaweisun2000_pvinverter/` — packaged Python source (service entry point, Modbus logic).
+- `tests/` — self-contained unit tests using lightweight stubs for system dependencies.
+- `service/` — run scripts used by the Venus OS init system.
+- `gui/`, `img/` — UI definitions and screenshots bundled with releases.
+
+### Local workflow
+
+1. Install tooling and dependencies:
+   ```bash
+   python -m pip install --upgrade pip
+   pip install '.[dev]'
+   ```
+2. Run quality checks locally:
+   ```bash
+   black --check .
+   flake8 .
+   pytest --maxfail=1 --disable-warnings -q
+   ```
+3. Reproduce the GitHub Actions pipeline with [act](https://github.com/nektos/act):
+   ```bash
+   act -j ci
+   # On Apple silicon you may need:
+   act -j ci --container-architecture linux/amd64
+   ```
+   Make sure Docker is running and `act` is installed.
+4. See [CONTRIBUTING.md](CONTRIBUTING.md) for additional guidelines.
+
+### Docker playground
+
+Launch a fully-contained simulator (based on `victronenergy/venus-docker` and a simple
+Modbus mock) with Docker Compose:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+The stack pulls the official Venus OS development image, installs this driver in editable
+mode, starts a lightweight Modbus simulator, and runs the service in "oneshot" mode against
+the simulated registers. Use `CTRL+C` (or `docker compose down --volumes --remove-orphans`)
+to stop the containers. Edit the code on your host and re-run the command – the Venus
+container reinstalls the project on every start so changes are reflected immediately.
+
+Environment knobs:
+
+- `VENUS_SIMULATION` (default `a`) selects the mock system loaded by `simulate.sh`.
+- `VENUS_SIMULATION_FLAGS` (default `--with-pvinverter`) forwards extra devices to the
+  simulation.
+- `DBUS_HUAWEISUN2000_MODBUS_*` override the Modbus endpoint that the driver connects to
+  (by default the bundled simulator).
+
+---
+
 ## 📝 License
 
 MIT License. See [LICENSE](LICENSE).
@@ -188,7 +257,7 @@ If you find this project useful and want to support its development, you can hel
 ## 🤝 Contributing
 
 - Pull requests are welcome!
-- Please read [CONTRIBUTING.md](CONTRIBUTING.md) (to be added).
+- Please read [CONTRIBUTING.md](CONTRIBUTING.md).
 - All feedback, issues, and PRs appreciated.
 
 ---

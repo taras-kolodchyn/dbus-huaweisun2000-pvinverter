@@ -1,8 +1,19 @@
 import logging
 import time
 
-from pymodbus.client.sync import ModbusTcpClient
-from pymodbus.exceptions import ModbusIOException, ConnectionException
+try:
+    from pymodbus.client import ModbusTcpClient
+except ImportError:  # pragma: no cover - legacy pymodbus 2.x
+    from pymodbus.client.sync import ModbusTcpClient
+
+try:
+    from pymodbus.exceptions import ModbusIOException, ConnectionException
+except ImportError:  # pragma: no cover - legacy pymodbus 2.x names
+    from pymodbus.exceptions import ModbusIOException  # type: ignore
+
+    class ConnectionException(ModbusIOException):
+        pass
+
 
 from . import datatypes
 
@@ -22,7 +33,8 @@ class Sun2000:
     ):
         # 'retries' - number of attempts to read a register in case of errors
         # 'retry_delay' - delay in seconds between retry attempts
-        self.wait = wait
+        self._connect_timeout = wait
+        self._connect_poll_interval = 0.1
         self.modbus_unit = modbus_unit
         self.inverter = ModbusTcpClient(
             host,
@@ -31,19 +43,31 @@ class Sun2000:
         )
         self.retries = retries
         self.retry_delay = retry_delay
+        self._host = host
+        self._port = port
 
     def connect(self):
-        if not self.isConnected():
-            self.inverter.connect()
-            time.sleep(self.wait)
-            if self.isConnected():
-                logging.info("Successfully connected to inverter")
-                return True
-            else:
-                logging.error("Connection to inverter failed")
-                return False
-        else:
+        if self.isConnected():
             return True
+
+        self.inverter.connect()
+        deadline = time.monotonic() + max(self._connect_timeout, 0)
+        while not self.isConnected() and time.monotonic() < deadline:
+            time.sleep(self._connect_poll_interval)
+
+        if self.isConnected():
+            logging.info(
+                "Successfully connected to inverter %s:%s", self._host, self._port
+            )
+            return True
+
+        logging.error(
+            "Connection to inverter %s:%s failed after %.1fs",
+            self._host,
+            self._port,
+            self._connect_timeout,
+        )
+        return False
 
     def disconnect(self):
         """Close the underlying tcp socket"""

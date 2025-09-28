@@ -79,7 +79,7 @@ class _FakeConnector:
 
 
 connector_modbus = types.SimpleNamespace(ModbusDataCollector2000Delux=_FakeConnector)
-sys.modules["connector_modbus"] = connector_modbus
+sys.modules["dbus_huaweisun2000_pvinverter.connector_modbus"] = connector_modbus
 
 
 # settings for module import
@@ -99,19 +99,23 @@ class _FakeSettingsModule:
 
 
 settings = types.SimpleNamespace(HuaweiSUN2000Settings=_FakeSettingsModule)
-sys.modules["settings"] = settings
+sys.modules["dbus_huaweisun2000_pvinverter.settings"] = settings
 
 # config
 config = types.SimpleNamespace()
-sys.modules["config"] = config
+sys.modules["dbus_huaweisun2000_pvinverter.config"] = config
 # -------------------------------------------------------------------------------
 
-# Dynamically load the target module (filename has dashes, so we load by path)
-MODULE_PATH = (
-    pathlib.Path(__file__).resolve().parents[1] / "dbus-huaweisun2000-pvinverter.py"
-)
+# Dynamically load the target module from the src tree
+SRC_DIR = pathlib.Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SRC_DIR))
+
+package_stub = types.ModuleType("dbus_huaweisun2000_pvinverter")
+package_stub.__path__ = [str(SRC_DIR / "dbus_huaweisun2000_pvinverter")]
+sys.modules.setdefault("dbus_huaweisun2000_pvinverter", package_stub)
+MODULE_PATH = SRC_DIR / "dbus_huaweisun2000_pvinverter" / "main.py"
 spec = importlib.util.spec_from_file_location(
-    "dbus_huaweisun2000_pvinverter", MODULE_PATH
+    "dbus_huaweisun2000_pvinverter.main", MODULE_PATH
 )
 m = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = m
@@ -141,6 +145,19 @@ class FakeConnectorForService:
         return {
             "/Ac/Power": 100,
             "/Ac/Current": 5,
+        }
+
+
+class FakeConnectorWithStatus:
+    def __init__(self):
+        self.calls = 0
+
+    def getData(self):
+        self.calls += 1
+        return {
+            "/Ac/Power": 42,
+            "/Ac/Current": 2,
+            "status_message": "All good",
         }
 
 
@@ -281,3 +298,54 @@ def test_writeable_flags_and_callbacks_present():
 def test_handlechangedvalue_accepts_changes():
     svc, _ = build_service()
     assert svc._handlechangedvalue("/any", 42) is True
+
+
+def test_update_with_status_message_sets_status_and_latency():
+    settings = FakeSettingsForService()
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={
+            "/Ac/Power": {"initial": 0, "textformat": m._format_w},
+            "/Ac/Current": {"initial": 0, "textformat": m._format_a},
+            "/Status": {"initial": ""},
+        },
+        data_connector=FakeConnectorWithStatus(),
+        service_factory=FakeService,
+        timeout_add=lambda ms, func: True,
+    )
+
+    p = svc._dbusservice.paths
+    assert p["/Status"] == ""
+    svc._update()
+    assert p["/Status"] == "All good"
+    assert p["/Connected"] == 1
+    assert isinstance(p["/Latency"], (int, float))
+
+
+def test_update_handles_none_data_and_disarms_connection():
+    class NoneConnector:
+        def getData(self):
+            return None
+
+    settings = FakeSettingsForService()
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={
+            "/Ac/Power": {"initial": 0, "textformat": m._format_w},
+        },
+        data_connector=NoneConnector(),
+        service_factory=FakeService,
+        timeout_add=lambda ms, func: True,
+    )
+
+    p = svc._dbusservice.paths
+    before = p["/UpdateIndex"]
+    assert svc._failure_count == 0
+    assert svc._update() is True
+    assert p["/UpdateIndex"] == before
+    assert p["/Connected"] == 0
+    assert p["/Status"].startswith("Update failed")
+    assert svc._failure_count == 1
+    assert svc._backoff_until is not None

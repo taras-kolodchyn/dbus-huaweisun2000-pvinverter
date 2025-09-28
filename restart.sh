@@ -1,32 +1,19 @@
-#!/bin/bash
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-echo "SCRIPT_DIR: $SCRIPT_DIR"
-
-PIDS=$(ps aux | grep "[d]bus-huaweisun2000-pvinverter.py" | awk '{print $2}')
-
-if [ -n "$PIDS" ]; then
-    echo "Found running process(es): $PIDS"
-    for PID in $PIDS; do
-        echo "Killing process: $PID"
-        kill "$PID"
-    done
-else
-    echo "No running dbus-huaweisun2000-pvinverter.py processes found."
-fi
-# Restart script compatible with BusyBox (Venus OS)
-# Kills all running dbus-huaweisun2000-pvinverter.py processes
 #!/bin/sh
-SCRIPT_DIR=$( cd -- "$( dirname -- "$0" )" && pwd )
+set -eu
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 echo "SCRIPT_DIR: $SCRIPT_DIR"
 
-PIDS=$(ps | grep '[d]bus-huaweisun2000-pvinverter.py' | awk '{print $1}')
+pids=$(ps | awk '/dbus_huaweisun2000_pvinverter/ {print $1}')
 
-if [ -n "$PIDS" ]; then
-    echo "Found running process(es): $PIDS"
-    for PID in $PIDS; do
-        echo "Killing process: $PID"
-        kill "$PID"
+if [ -n "${pids}" ]; then
+    echo "Found running process(es): $pids"
+    for pid in $pids; do
+        echo "Killing process: $pid"
+        kill "$pid" 2>/dev/null || true
     done
 else
-    echo "No running dbus-huaweisun2000-pvinverter.py processes found."
+    echo "No running dbus_huaweisun2000_pvinverter processes found."
 fi
+
+exit 0

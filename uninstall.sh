@@ -11,8 +11,8 @@ else
   echo "Failed to remove /service/$SERVICE_NAME. It might already be removed."
 fi
 
-echo "Killing python process running dbus-huaweisun2000-pvinverter.py"
-PIDS=$(ps | grep '[d]bus-huaweisun2000-pvinverter.py' | awk '{print $1}')
+echo "Killing python process running dbus_huaweisun2000_pvinverter"
+PIDS=$(ps | grep '[d]bus_huaweisun2000_pvinverter' | awk '{print $1}')
 echo "Found PIDs: $PIDS"
 if [ -n "$PIDS" ]; then
   for PID in $PIDS; do

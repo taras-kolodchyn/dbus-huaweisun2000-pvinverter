@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbus-huaweisun2000-pvinverter"
+version = "1.0.0"
+description = "D-Bus driver for Huawei SUN2000 integration with Victron Venus OS"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{name = "Taras Kolodchyn"}]
+license = {file = "LICENSE"}
+dependencies = [
+    "pymodbus>=2.5,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black==24.10.0",
+    "flake8==7.1.1",
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests", "venv", "img", "gui", "service", "*.egg-info"]

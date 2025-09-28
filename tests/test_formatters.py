@@ -73,7 +73,7 @@ class _FakeConnector:
 
 
 connector_modbus = types.SimpleNamespace(ModbusDataCollector2000Delux=_FakeConnector)
-sys.modules["connector_modbus"] = connector_modbus
+sys.modules["dbus_huaweisun2000_pvinverter.connector_modbus"] = connector_modbus
 
 
 # settings
@@ -93,19 +93,23 @@ class _FakeSettings:
 
 
 settings = types.SimpleNamespace(HuaweiSUN2000Settings=_FakeSettings)
-sys.modules["settings"] = settings
+sys.modules["dbus_huaweisun2000_pvinverter.settings"] = settings
 
 # config
 config = types.SimpleNamespace()
-sys.modules["config"] = config
+sys.modules["dbus_huaweisun2000_pvinverter.config"] = config
 # -------------------------------------------------------------------------------
 
-# Dynamically load the target module (filename has dashes, so we load by path)
-MODULE_PATH = (
-    pathlib.Path(__file__).resolve().parents[1] / "dbus-huaweisun2000-pvinverter.py"
-)
+# Dynamically load the target module from the src tree
+SRC_DIR = pathlib.Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SRC_DIR))
+
+package_stub = types.ModuleType("dbus_huaweisun2000_pvinverter")
+package_stub.__path__ = [str(SRC_DIR / "dbus_huaweisun2000_pvinverter")]
+sys.modules.setdefault("dbus_huaweisun2000_pvinverter", package_stub)
+MODULE_PATH = SRC_DIR / "dbus_huaweisun2000_pvinverter" / "main.py"
 spec = importlib.util.spec_from_file_location(
-    "dbus_huaweisun2000_pvinverter", MODULE_PATH
+    "dbus_huaweisun2000_pvinverter.main", MODULE_PATH
 )
 m = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = m

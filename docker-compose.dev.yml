@@ -1,0 +1,23 @@
+services:
+  modbus-sim:
+    image: python:3.12-slim
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    command: ["bash", "-lc", "pip install 'pymodbus>=2,<3' && python docker/modbus_sim.py"]
+
+  venus:
+    image: victronenergy/venus-docker
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      - DBUS_HUAWEISUN2000_MODBUS_HOST=modbus-sim
+      - DBUS_HUAWEISUN2000_MODBUS_PORT=15020
+      - DBUS_HUAWEISUN2000_MODBUS_UNIT=1
+      - DBUS_HUAWEISUN2000_ONESHOT=5000
+      - VENUS_SIMULATION=a
+      - VENUS_SIMULATION_FLAGS=--with-pvinverter
+    command: ["bash", "-lc", "/workspace/docker/run_venus_with_driver.sh"]
+    depends_on:
+      - modbus-sim

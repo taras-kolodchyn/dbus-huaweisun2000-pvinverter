@@ -12,7 +12,52 @@ sys.path.insert(
         "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
     ),
 )
-from settingsdevice import SettingsDevice  # noqa: E402
+
+try:  # pragma: no cover - exercised only on target hardware
+    from settingsdevice import SettingsDevice  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - allows imports on dev systems
+
+    class SettingsDevice:  # type: ignore
+        def __init__(self, *args, supportedSettings=None, eventCallback=None, **kwargs):
+            self._callback = eventCallback
+            self._values = {
+                key: setting[1] for key, setting in (supportedSettings or {}).items()
+            }
+
+            overrides = {
+                "modbus_host": os.getenv("DBUS_HUAWEISUN2000_MODBUS_HOST"),
+                "modbus_port": os.getenv("DBUS_HUAWEISUN2000_MODBUS_PORT"),
+                "modbus_unit": os.getenv("DBUS_HUAWEISUN2000_MODBUS_UNIT"),
+                "update_time_ms": os.getenv("DBUS_HUAWEISUN2000_UPDATE_TIME_MS"),
+                "power_correction_factor": os.getenv(
+                    "DBUS_HUAWEISUN2000_POWER_CORRECTION"
+                ),
+            }
+
+            for key, value in overrides.items():
+                if value is None:
+                    continue
+                if key in ("modbus_port", "modbus_unit", "update_time_ms"):
+                    try:
+                        self._values[key] = int(value)
+                    except ValueError:
+                        continue
+                elif key == "power_correction_factor":
+                    try:
+                        self._values[key] = float(value)
+                    except ValueError:
+                        continue
+                else:
+                    self._values[key] = value
+
+        def __getitem__(self, item):
+            return self._values[item]
+
+        def __setitem__(self, item, value):
+            old_value = self._values.get(item)
+            self._values[item] = value
+            if self._callback is not None:
+                self._callback(item, old_value, value)
 
 
 class SystemBus(dbus.bus.BusConnection):

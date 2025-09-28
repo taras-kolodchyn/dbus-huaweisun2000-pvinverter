@@ -1,16 +1,21 @@
-from sun2000_modbus import inverter
-from sun2000_modbus import registers
+import logging
+from typing import Optional
+
 from dbus.mainloop.glib import DBusGMainLoop
-from settings import HuaweiSUN2000Settings
+
+from .settings import HuaweiSUN2000Settings
+from .sun2000_modbus import inverter
+from .sun2000_modbus import registers
+
+
+LOG = logging.getLogger(__name__)
 
 
 def safe_int(val, default=0):
     try:
         return int(val)
     except (TypeError, ValueError):
-        import logging
-
-        logging.warning(f"Modbus value is invalid: '{val}', using {default}")
+        LOG.warning("Modbus value is invalid: %s, using %s", val, default)
         return default
 
 
@@ -18,9 +23,7 @@ def safe_float(val, default=0.0):
     try:
         return float(val)
     except (TypeError, ValueError):
-        import logging
-
-        logging.warning(f"Modbus value is invalid: '{val}', using {default}")
+        LOG.warning("Modbus value is invalid: %s, using %s", val, default)
         return default
 
 
@@ -66,16 +69,27 @@ class ModbusDataCollector2000Delux:
         port=502,
         modbus_unit=1,
         power_correction_factor=0.995,
+        inverter_factory=inverter.Sun2000,
     ):
-        self.invSun2000 = inverter.Sun2000(
+        self.invSun2000 = inverter_factory(
             host=host, port=port, modbus_unit=modbus_unit
         )
         self.power_correction_factor = power_correction_factor
+        self._phase_divisor = 3  # default to three-phase; may be updated later
+        self._phase_type: Optional[str] = None
+
+    def set_phase_type(self, phase_type: Optional[str]):
+        """Adjust per-phase calculations based on inverter topology."""
+        self._phase_type = phase_type
+        if phase_type and str(phase_type).lower().startswith("three"):
+            self._phase_divisor = 3
+        else:
+            self._phase_divisor = 1
 
     def getData(self):
         # The connect() method internally checks whether there's already a connection
         if not self.invSun2000.connect():
-            print("Connection error Modbus TCP")
+            LOG.error("Connection error Modbus TCP")
             return None
 
         data = {}
@@ -143,16 +157,26 @@ class ModbusDataCollector2000Delux:
 
         # data['/Ac/StatusCode'] = statuscode
 
-        energy_forward = self.invSun2000.read(
+        energy_forward_raw = self.invSun2000.read(
             registers.InverterEquipmentRegister.AccumulatedEnergyYield
         )
+        energy_forward = safe_float(energy_forward_raw, 0.0)
         data["/Ac/Energy/Forward"] = energy_forward
-        # There is no Modbus register for the phases
-        data["/Ac/L1/Energy/Forward"] = round(energy_forward / 3.0, 2)
-        data["/Ac/L2/Energy/Forward"] = round(energy_forward / 3.0, 2)
-        data["/Ac/L3/Energy/Forward"] = round(energy_forward / 3.0, 2)
+        if self._phase_divisor == 3:
+            per_phase_energy = round(energy_forward / 3.0, 2)
+            data["/Ac/L1/Energy/Forward"] = per_phase_energy
+            data["/Ac/L2/Energy/Forward"] = per_phase_energy
+            data["/Ac/L3/Energy/Forward"] = per_phase_energy
+        else:
+            per_phase_energy = round(energy_forward, 2)
+            data["/Ac/L1/Energy/Forward"] = per_phase_energy
+            data["/Ac/L2/Energy/Forward"] = 0.0
+            data["/Ac/L3/Energy/Forward"] = 0.0
 
-        freq = self.invSun2000.read(registers.InverterEquipmentRegister.GridFrequency)
+        freq = safe_float(
+            self.invSun2000.read(registers.InverterEquipmentRegister.GridFrequency),
+            None,
+        )
         data["/Ac/L1/Frequency"] = freq
         data["/Ac/L2/Frequency"] = freq
         data["/Ac/L3/Frequency"] = freq
@@ -189,10 +213,8 @@ class ModbusDataCollector2000Delux:
         If a value cannot be read, sets it to 'unknown' and logs a warning.
         """
         if not self.invSun2000.connect():
-            print("Connection error Modbus TCP")
+            LOG.error("Connection error Modbus TCP")
             return None
-
-        import logging
 
         data = {}
 
@@ -205,7 +227,7 @@ class ModbusDataCollector2000Delux:
                 else:
                     return self.invSun2000.read(register)
             except Exception as e:
-                logging.warning(f"Could not read {name}: {e}")
+                LOG.warning("Could not read %s: %s", name, e)
                 return "unknown"
 
         # Main fields
@@ -243,7 +265,7 @@ class ModbusDataCollector2000Delux:
         )
 
         # Log all static data for debugging purposes
-        logging.info("Static inverter info collected: " + str(data))
+        LOG.info("Static inverter info collected: %s", data)
         return data
 
 

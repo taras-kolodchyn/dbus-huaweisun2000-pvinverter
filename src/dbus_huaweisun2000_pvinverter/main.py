@@ -11,32 +11,38 @@ initial value, write to the dummy data via the dbus. See example.
 
 https://github.com/victronenergy/dbus_vebus_to_pvinverter/tree/master/test
 """
-from gi.repository import GLib
-from dbus.mainloop.glib import DBusGMainLoop
-from connector_modbus import ModbusDataCollector2000Delux
-from settings import HuaweiSUN2000Settings
-
-# our own packages from victron
-from vedbus import VeDbusService
-import vedbus
-
-
-import platform
 import logging
+import os
+import platform
 import sys
 import time
-import os
-import config
+from typing import Dict, Optional
 
-sys.path.insert(
-    1,
-    os.path.join(
-        os.path.dirname(__file__),
-        "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
-    ),
-)  # noqa: E402
+from gi.repository import GLib
+from dbus.mainloop.glib import DBusGMainLoop
 
-print("VEDBUS FILE:", vedbus.__file__)
+from .connector_modbus import ModbusDataCollector2000Delux
+from .settings import HuaweiSUN2000Settings
+from . import config
+
+try:  # Prefer the environment-provided vedbus, but fall back to Venus OS path.
+    from vedbus import VeDbusService
+except ModuleNotFoundError:  # pragma: no cover - exercised only on target hardware
+    sys.path.insert(
+        1,
+        os.path.join(
+            os.path.dirname(__file__),
+            "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
+        ),
+    )
+    try:
+        from vedbus import VeDbusService
+    except ModuleNotFoundError as err:  # pragma: no cover - indicates misconfigured env
+        raise RuntimeError(
+            "Unable to import vedbus. Ensure velib_python is available on PYTHONPATH."
+        ) from err
+
+LOG = logging.getLogger(__name__)
 
 
 class DbusSun2000Service:
@@ -61,6 +67,12 @@ class DbusSun2000Service:
         self._dbusservice = service_factory(servicename, register=False)
         self._paths = paths
         self._data_connector = data_connector
+        self._service_name = servicename
+        self._update_interval_ms = max(int(settings.get("update_time_ms")), 100)
+        self._timeout_add = timeout_add
+        self._failure_count = 0
+        self._backoff_until: Optional[float] = None
+        self._last_update: Optional[float] = None
 
         logging.debug(
             "%s /DeviceInstance = %d" % (servicename, settings.get_vrm_instance())
@@ -112,29 +124,69 @@ class DbusSun2000Service:
         self._dbusservice.register()
 
         timeout_add(
-            settings.get("update_time_ms"),
+            self._update_interval_ms,
             self._update,
         )  # pause in ms before the next request
 
     def _update(self):
+        now = time.monotonic()
+        if self._backoff_until and now < self._backoff_until:
+            LOG.debug(
+                "Skipping update for %s; waiting %.2fs before next attempt",
+                self._service_name,
+                self._backoff_until - now,
+            )
+            return True
+
+        start = time.monotonic()
         with self._dbusservice as s:
 
             try:
                 logging.info("start update")
-                meter_data = self._data_connector.getData()
+                meter_data: Optional[Dict[str, object]] = self._data_connector.getData()
                 logging.info("end update")
 
-                for k, v in meter_data.items():
-                    logging.info(f"set {k} to {v}")
-                    s[k] = v
+                if meter_data is None:
+                    raise RuntimeError("Modbus returned no data")
+
+                for path, value in meter_data.items():
+                    if path not in s:
+                        LOG.debug("Ignoring unexpected datapoint %s", path)
+                        continue
+                    logging.info("set %s to %s", path, value)
+                    s[path] = value
 
                 # increment UpdateIndex - to show that new data is available (and wrap)
                 s["/UpdateIndex"] = (s["/UpdateIndex"] + 1) % 256
 
                 # update lastupdate vars
-                self._lastUpdate = time.time()
+                self._last_update = time.time()
+                latency_ms = round((time.monotonic() - start) * 1000, 1)
+                s["/Latency"] = latency_ms
+                s["/Connected"] = 1
+                status_message = meter_data.get("status_message")
+                if status_message:
+                    s["/Status"] = status_message
+                else:
+                    try:
+                        if s["/Status"]:
+                            s["/Status"] = ""
+                    except KeyError:
+                        pass
+
+                self._failure_count = 0
+                self._backoff_until = None
 
             except Exception as e:
+                self._failure_count += 1
+                backoff_seconds = min(
+                    (self._update_interval_ms / 1000.0)
+                    * (2 ** (self._failure_count - 1)),
+                    60,
+                )
+                self._backoff_until = time.monotonic() + backoff_seconds
+                s["/Connected"] = 0
+                s["/Status"] = f"Update failed: {e}"[:80]
                 logging.critical("Error at %s", "_update", exc_info=e)
 
         return True
@@ -245,6 +297,8 @@ def main():
             continue
         break
 
+    modbus.set_phase_type(staticdata.get("PhaseType"))
+
     try:
         logging.info("Starting up")
 
@@ -299,6 +353,22 @@ def main():
             "(= event based)"
         )
         mainloop = GLib.MainLoop()
+        oneshot_env = os.getenv("DBUS_HUAWEISUN2000_ONESHOT")
+        if oneshot_env is not None:
+            try:
+                timeout_ms = max(int(oneshot_env), 100)
+            except ValueError:
+                timeout_ms = settings.get("update_time_ms") * 2
+
+            def stop_loop():
+                logging.info(
+                    "Oneshot mode active, stopping main loop after %d ms",
+                    timeout_ms,
+                )
+                mainloop.quit()
+                return False
+
+            GLib.timeout_add(timeout_ms, stop_loop)
         mainloop.run()
     except Exception as e:
         logging.critical("Error at %s", "main", exc_info=e)

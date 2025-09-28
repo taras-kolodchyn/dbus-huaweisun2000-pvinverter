@@ -1,5 +1,9 @@
 #!/bin/sh
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NEWPATH="$SCRIPT_DIR/../dbus-huaweisun2000-pvinverter.py"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+PYTHONPATH="$PROJECT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+
 exec 2>&1
-exec python3 -u "$NEWPATH"
+exec python3 -u -m dbus_huaweisun2000_pvinverter
