@@ -320,6 +320,9 @@ class InverterEquipmentRegister(Enum):
     DailyEnergyYield = Register(
         32114, 2, datatypes.DataType.UINT32_BE, 100, "kWh", AccessType.RO, None
     )
+    DailyEnergyYieldRealtime = Register(
+        40562, 2, datatypes.DataType.UINT32_BE, 100, "kWh", AccessType.RO, None
+    )
     ActiveAdjustmentMode = Register(
         35300, 1, datatypes.DataType.UINT16_BE, 1, None, AccessType.RO, None
     )

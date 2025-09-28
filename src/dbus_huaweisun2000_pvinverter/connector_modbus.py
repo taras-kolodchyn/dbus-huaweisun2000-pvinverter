@@ -173,40 +173,68 @@ class ModbusDataCollector2000Delux:
             data["/Ac/L2/Energy/Forward"] = 0.0
             data["/Ac/L3/Energy/Forward"] = 0.0
 
-        daily_yield_raw = self.invSun2000.read(
-            registers.InverterEquipmentRegister.DailyEnergyYield
+        daily_registers = (
+            registers.InverterEquipmentRegister.DailyEnergyYieldRealtime,
+            registers.InverterEquipmentRegister.DailyEnergyYield,
         )
-        daily_yield_kwh = safe_float(daily_yield_raw, 0.0)
-        daily_yield_wh = round(daily_yield_kwh * 1000.0, 1)
-        data["/Ac/Energy/Today"] = daily_yield_wh
-        if self._phase_divisor == 3:
-            per_phase_today = round(daily_yield_wh / 3.0, 1)
-            data["/Ac/L1/Energy/Today"] = per_phase_today
-            data["/Ac/L2/Energy/Today"] = per_phase_today
-            data["/Ac/L3/Energy/Today"] = per_phase_today
-        else:
-            data["/Ac/L1/Energy/Today"] = daily_yield_wh
-            data["/Ac/L2/Energy/Today"] = 0.0
-            data["/Ac/L3/Energy/Today"] = 0.0
 
-        voltages = [
-            safe_float(data.get("/Ac/L1/Voltage")),
-            safe_float(data.get("/Ac/L2/Voltage")),
-            safe_float(data.get("/Ac/L3/Voltage")),
-        ]
-        nonzero_voltages = [v for v in voltages if v]
-        data["/Ac/Voltage"] = (
-            round(sum(nonzero_voltages) / len(nonzero_voltages), 1)
-            if nonzero_voltages
-            else 0.0
-        )
+        daily_yield_wh = None
+        last_error = None
+        for candidate in daily_registers:
+            try:
+                daily_yield_raw = self.invSun2000.read(candidate)
+            except Exception as err:  # pragma: no cover - depends on hardware
+                last_error = err
+                continue
+            daily_yield_kwh = safe_float(daily_yield_raw, None)
+            if daily_yield_kwh is None:
+                continue
+            daily_yield_wh = round(daily_yield_kwh * 1000.0, 1)
+            break
+
+        if daily_yield_wh is None:
+            if last_error is not None:
+                LOG.warning("Could not read DailyEnergyYield: %s", last_error)
+            data["/Ac/Energy/Today"] = None
+            data["/Ac/L1/Energy/Today"] = None
+            data["/Ac/L2/Energy/Today"] = None
+            data["/Ac/L3/Energy/Today"] = None
+        else:
+            data["/Ac/Energy/Today"] = daily_yield_wh
+            if self._phase_divisor == 3:
+                per_phase_today = round(daily_yield_wh / 3.0, 1)
+                data["/Ac/L1/Energy/Today"] = per_phase_today
+                data["/Ac/L2/Energy/Today"] = per_phase_today
+                data["/Ac/L3/Energy/Today"] = per_phase_today
+            else:
+                data["/Ac/L1/Energy/Today"] = daily_yield_wh
+                data["/Ac/L2/Energy/Today"] = 0.0
+                data["/Ac/L3/Energy/Today"] = 0.0
+
+        if self._phase_divisor == 1:
+            data["/Ac/Voltage"] = safe_float(data.get("/Ac/L1/Voltage"), None)
+        else:
+            voltages = [
+                safe_float(data.get("/Ac/L1/Voltage"), None),
+                safe_float(data.get("/Ac/L2/Voltage"), None),
+                safe_float(data.get("/Ac/L3/Voltage"), None),
+            ]
+            valid_voltages = [v for v in voltages if v not in (None, 0.0)]
+            data["/Ac/Voltage"] = (
+                round(sum(valid_voltages) / len(valid_voltages), 1)
+                if valid_voltages
+                else None
+            )
 
         currents = [
-            safe_float(data.get("/Ac/L1/Current")),
-            safe_float(data.get("/Ac/L2/Current")),
-            safe_float(data.get("/Ac/L3/Current")),
+            safe_float(data.get("/Ac/L1/Current"), None),
+            safe_float(data.get("/Ac/L2/Current"), None),
+            safe_float(data.get("/Ac/L3/Current"), None),
         ]
-        data["/Ac/Current"] = round(sum(c for c in currents if c), 1)
+        if any(c is not None for c in currents):
+            data["/Ac/Current"] = round(sum(c or 0.0 for c in currents), 1)
+        else:
+            data["/Ac/Current"] = None
 
         freq = safe_float(
             self.invSun2000.read(registers.InverterEquipmentRegister.GridFrequency),

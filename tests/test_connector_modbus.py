@@ -97,6 +97,7 @@ def build_values():
         registers.InverterEquipmentRegister.InputPower: 9500,
         registers.InverterEquipmentRegister.MaximumActivePower: 10000,
         registers.InverterEquipmentRegister.AccumulatedEnergyYield: 123.0,
+        registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: 12.0,
         registers.InverterEquipmentRegister.DailyEnergyYield: 12.0,
         registers.InverterEquipmentRegister.GridFrequency: 50.0,
         registers.InverterEquipmentRegister.PowerFactor: 0.95,
@@ -149,7 +150,7 @@ def test_connector_handles_unexpected_register_missing():
         registers.InverterEquipmentRegister.InputPower: 110,
         registers.InverterEquipmentRegister.MaximumActivePower: 200,
         registers.InverterEquipmentRegister.AccumulatedEnergyYield: 9.0,
-        registers.InverterEquipmentRegister.DailyEnergyYield: 9.0,
+        registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: 9.0,
         registers.InverterEquipmentRegister.GridFrequency: 50.0,
         registers.InverterEquipmentRegister.PowerFactor: 1.0,
     }
@@ -165,3 +166,27 @@ def test_connector_handles_unexpected_register_missing():
     assert data["/Ac/Energy/Today"] == round(9.0 * 1000.0, 1)
     assert data["/Ac/Voltage"] == 230.0
     assert data["/Ac/Current"] == 1.0
+
+
+def test_daily_energy_falls_back_to_legacy_register():
+    values = {
+        registers.InverterEquipmentRegister.AccumulatedEnergyYield: 50.0,
+        registers.InverterEquipmentRegister.DailyEnergyYield: 5.0,
+        registers.InverterEquipmentRegister.GridFrequency: 50.0,
+        registers.InverterEquipmentRegister.PhaseACurrent: 2.0,
+        registers.InverterEquipmentRegister.PhaseAVoltage: 230,
+        registers.InverterEquipmentRegister.PowerFactor: 1.0,
+    }
+
+    class LegacySun2000(FakeSun2000):
+        def read(self, register):
+            if register == registers.InverterEquipmentRegister.DailyEnergyYieldRealtime:
+                raise RuntimeError("unsupported register")
+            return super().read(register)
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=lambda **_: LegacySun2000(values=values)
+    )
+    collector.set_phase_type("Single-phase")
+    data = collector.getData()
+    assert data["/Ac/Energy/Today"] == round(5.0 * 1000.0, 1)
