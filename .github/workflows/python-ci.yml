@@ -83,8 +83,9 @@ jobs:
           ARCHIVE_NAME="dbus-huaweisun2000-pvinverter-v${VERSION}.zip"
           git ls-files -z | grep -vz '\.zip$' | xargs -0 zip -qr "$ARCHIVE_NAME"
 
-      - name: Upload ZIP Artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v1
         with:
-          name: dbus-huaweisun2000-pvinverter-v${{ env.VERSION }}
-          path: dbus-huaweisun2000-pvinverter-v${{ env.VERSION }}.zip
+          files: dbus-huaweisun2000-pvinverter-v${{ env.VERSION }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
