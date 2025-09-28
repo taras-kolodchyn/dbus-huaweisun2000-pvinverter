@@ -33,8 +33,9 @@ class Sun2000:
     ):
         # 'retries' - number of attempts to read a register in case of errors
         # 'retry_delay' - delay in seconds between retry attempts
-        self._connect_timeout = wait
+        self._connect_timeout = max(wait, 0)
         self._connect_poll_interval = 0.1
+        self._post_connect_delay = max(wait, 0)
         self.modbus_unit = modbus_unit
         self.inverter = ModbusTcpClient(
             host,
@@ -56,6 +57,8 @@ class Sun2000:
             time.sleep(self._connect_poll_interval)
 
         if self.isConnected():
+            if self._post_connect_delay:
+                time.sleep(self._post_connect_delay)
             logging.info(
                 "Successfully connected to inverter %s:%s", self._host, self._port
             )
