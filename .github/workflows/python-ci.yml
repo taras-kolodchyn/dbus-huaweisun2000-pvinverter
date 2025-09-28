@@ -81,7 +81,7 @@ jobs:
       - name: Create Release ZIP
         run: |
           ARCHIVE_NAME="dbus-huaweisun2000-pvinverter-v${VERSION}.zip"
-          git ls-files -z | xargs -0 zip -qr "$ARCHIVE_NAME"
+          git ls-files -z | grep -vz '\.zip$' | xargs -0 zip -qr "$ARCHIVE_NAME"
 
       - name: Upload ZIP Artifact
         uses: actions/upload-artifact@v4
