@@ -97,6 +97,7 @@ def build_values():
         registers.InverterEquipmentRegister.InputPower: 9500,
         registers.InverterEquipmentRegister.MaximumActivePower: 10000,
         registers.InverterEquipmentRegister.AccumulatedEnergyYield: 123.0,
+        registers.InverterEquipmentRegister.DailyEnergyYield: 12.0,
         registers.InverterEquipmentRegister.GridFrequency: 50.0,
         registers.InverterEquipmentRegister.PowerFactor: 0.95,
     }
@@ -124,12 +125,20 @@ def test_energy_distribution_updates_with_phase_type():
     assert data_three["/Ac/L1/Energy/Forward"] == round(123.0 / 3.0, 2)
     assert data_three["/Ac/L2/Energy/Forward"] == round(123.0 / 3.0, 2)
     assert data_three["/Ac/L3/Energy/Forward"] == round(123.0 / 3.0, 2)
+    assert data_three["/Ac/Energy/Today"] == round(12.0 * 1000.0, 1)
+    assert data_three["/Ac/L1/Energy/Today"] == round((12.0 * 1000.0) / 3.0, 1)
+    assert data_three["/Ac/Voltage"] == 230.0
+    assert data_three["/Ac/Current"] == round(10 + 10 + 10, 1)
 
     collector.set_phase_type("Single-phase")
     data_single = collector.getData()
     assert data_single["/Ac/L1/Energy/Forward"] == round(123.0, 2)
     assert data_single["/Ac/L2/Energy/Forward"] == 0.0
     assert data_single["/Ac/L3/Energy/Forward"] == 0.0
+    assert data_single["/Ac/Energy/Today"] == round(12.0 * 1000.0, 1)
+    assert data_single["/Ac/L1/Energy/Today"] == round(12.0 * 1000.0, 1)
+    assert data_single["/Ac/Voltage"] == 230.0
+    assert data_single["/Ac/Current"] == 30.0
 
 
 def test_connector_handles_unexpected_register_missing():
@@ -140,6 +149,7 @@ def test_connector_handles_unexpected_register_missing():
         registers.InverterEquipmentRegister.InputPower: 110,
         registers.InverterEquipmentRegister.MaximumActivePower: 200,
         registers.InverterEquipmentRegister.AccumulatedEnergyYield: 9.0,
+        registers.InverterEquipmentRegister.DailyEnergyYield: 9.0,
         registers.InverterEquipmentRegister.GridFrequency: 50.0,
         registers.InverterEquipmentRegister.PowerFactor: 1.0,
     }
@@ -152,3 +162,6 @@ def test_connector_handles_unexpected_register_missing():
     assert data["/Ac/L1/Energy/Forward"] == round(9.0, 2)
     assert data["/Ac/L2/Energy/Forward"] == 0.0
     assert data["/Ac/L3/Energy/Forward"] == 0.0
+    assert data["/Ac/Energy/Today"] == round(9.0 * 1000.0, 1)
+    assert data["/Ac/Voltage"] == 230.0
+    assert data["/Ac/Current"] == 1.0

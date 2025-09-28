@@ -206,6 +206,12 @@ def _format_kwh(p, v):
     return str(round(v, 2)) + " kWh"
 
 
+def _format_wh(p, v):
+    if v is None:
+        return None
+    return str(round(v, 1)) + " Wh"
+
+
 def _format_a(p, v):
     if v is None:
         return None
@@ -307,12 +313,14 @@ def main():
             "/Ac/Current": {"initial": 0, "textformat": _format_a},
             "/Ac/Voltage": {"initial": 0, "textformat": _format_v},
             "/Ac/Energy/Forward": {"initial": None, "textformat": _format_kwh},
+            "/Ac/Energy/Today": {"initial": None, "textformat": _format_wh},
             #
             "/Ac/L1/Power": {"initial": 0, "textformat": _format_w},
             "/Ac/L1/Current": {"initial": 0, "textformat": _format_a},
             "/Ac/L1/Voltage": {"initial": 0, "textformat": _format_v},
             "/Ac/L1/Frequency": {"initial": None, "textformat": _format_hz},
             "/Ac/L1/Energy/Forward": {"initial": None, "textformat": _format_kwh},
+            "/Ac/L1/Energy/Today": {"initial": None, "textformat": _format_wh},
             #
             "/Ac/MaxPower": {"initial": 20000, "textformat": _format_w},
             "/Ac/StatusCode": {"initial": 0, "textformat": _format_n},
@@ -321,11 +329,13 @@ def main():
             "/Ac/L2/Voltage": {"initial": 0, "textformat": _format_v},
             "/Ac/L2/Frequency": {"initial": None, "textformat": _format_hz},
             "/Ac/L2/Energy/Forward": {"initial": None, "textformat": _format_kwh},
+            "/Ac/L2/Energy/Today": {"initial": None, "textformat": _format_wh},
             "/Ac/L3/Power": {"initial": 0, "textformat": _format_w},
             "/Ac/L3/Current": {"initial": 0, "textformat": _format_a},
             "/Ac/L3/Voltage": {"initial": 0, "textformat": _format_v},
             "/Ac/L3/Frequency": {"initial": None, "textformat": _format_hz},
             "/Ac/L3/Energy/Forward": {"initial": None, "textformat": _format_kwh},
+            "/Ac/L3/Energy/Today": {"initial": None, "textformat": _format_wh},
             "/Dc/Power": {"initial": 0, "textformat": _format_w},
             "/Status": {"initial": ""},
         }

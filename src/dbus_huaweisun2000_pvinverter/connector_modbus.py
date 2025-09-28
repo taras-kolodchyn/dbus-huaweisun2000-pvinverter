@@ -173,6 +173,41 @@ class ModbusDataCollector2000Delux:
             data["/Ac/L2/Energy/Forward"] = 0.0
             data["/Ac/L3/Energy/Forward"] = 0.0
 
+        daily_yield_raw = self.invSun2000.read(
+            registers.InverterEquipmentRegister.DailyEnergyYield
+        )
+        daily_yield_kwh = safe_float(daily_yield_raw, 0.0)
+        daily_yield_wh = round(daily_yield_kwh * 1000.0, 1)
+        data["/Ac/Energy/Today"] = daily_yield_wh
+        if self._phase_divisor == 3:
+            per_phase_today = round(daily_yield_wh / 3.0, 1)
+            data["/Ac/L1/Energy/Today"] = per_phase_today
+            data["/Ac/L2/Energy/Today"] = per_phase_today
+            data["/Ac/L3/Energy/Today"] = per_phase_today
+        else:
+            data["/Ac/L1/Energy/Today"] = daily_yield_wh
+            data["/Ac/L2/Energy/Today"] = 0.0
+            data["/Ac/L3/Energy/Today"] = 0.0
+
+        voltages = [
+            safe_float(data.get("/Ac/L1/Voltage")),
+            safe_float(data.get("/Ac/L2/Voltage")),
+            safe_float(data.get("/Ac/L3/Voltage")),
+        ]
+        nonzero_voltages = [v for v in voltages if v]
+        data["/Ac/Voltage"] = (
+            round(sum(nonzero_voltages) / len(nonzero_voltages), 1)
+            if nonzero_voltages
+            else 0.0
+        )
+
+        currents = [
+            safe_float(data.get("/Ac/L1/Current")),
+            safe_float(data.get("/Ac/L2/Current")),
+            safe_float(data.get("/Ac/L3/Current")),
+        ]
+        data["/Ac/Current"] = round(sum(c for c in currents if c), 1)
+
         freq = safe_float(
             self.invSun2000.read(registers.InverterEquipmentRegister.GridFrequency),
             None,
