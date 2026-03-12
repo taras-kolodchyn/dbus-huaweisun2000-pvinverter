@@ -49,10 +49,10 @@ Get detailed monitoring, energy analytics, and remote diagnostics — all in one
 
 | Device           | Version                       | Status         |
 |------------------|-------------------------------|----------------|
-| Cerbo GX         | Venus OS v3.60 – v3.67        | Supported      |
+| Cerbo GX         | Venus OS v3.60 – v3.70        | Supported      |
 | SUN2000-30KTL-M3 | Latest firmware               | Supported      |
 
-- Venus OS versions 3.60–3.67 have been verified as working.
+- Venus OS versions 3.60–3.70 have been verified as working.
 - Other recent Huawei SUN2000 inverters should work if they support Modbus TCP.
 - See [Issues](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/issues) for compatibility reports.
 
