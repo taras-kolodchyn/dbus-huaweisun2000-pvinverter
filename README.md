@@ -36,7 +36,7 @@ Get detailed monitoring, energy analytics, and remote diagnostics — all in one
 
 ## 📦 Requirements
 
-- **Victron Cerbo GX** or compatible device with Venus OS (**v3.60 – v3.66** verified)
+- **Victron Cerbo GX** or compatible device with Venus OS (**v3.60 – v3.70** verified)
 - **Huawei SUN2000 inverter** (any recent model)
 - **Inverter WiFi or LAN access** (Modbus TCP port 502 open)
 - **Python 3.x** (pre-installed on Venus OS)
