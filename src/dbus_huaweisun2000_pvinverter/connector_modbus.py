@@ -276,6 +276,7 @@ class ModbusDataCollector2000Delux:
         cache_key = self._group_cache_key(group)
         cached_values = self._auxiliary_group_cache.get(cache_key)
         refresh_interval = group.get("refresh_interval_s")
+        read_kwargs = {}
 
         if optional_key in self._disabled_optional_keys:
             return dict(cached_values or {})
@@ -287,11 +288,13 @@ class ModbusDataCollector2000Delux:
                 and (self._time_fn() - updated_at) < refresh_interval
             ):
                 return dict(cached_values)
+            read_kwargs = {"retries": 1, "retry_delay": 0}
 
         try:
             payload = self.invSun2000.read_range(
                 group["start"],
                 end_address=group["end"],
+                **read_kwargs,
             )
         except inverter.UnsupportedRegisterError as err:
             if optional_key is not None:

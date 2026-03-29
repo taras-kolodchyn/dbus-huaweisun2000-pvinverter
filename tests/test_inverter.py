@@ -262,6 +262,23 @@ def test_read_raw_value_raises_last_exception_after_retries(monkeypatch):
         inverter.read_raw_value(make_register())
 
 
+def test_read_raw_value_single_retry_override_skips_reconnect(monkeypatch):
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[Raised(FakeConnectionException("link down"))],
+    )
+    monkeypatch.setattr(inv.time, "sleep", lambda *_: None)
+    inverter = inv.Sun2000("inverter.local", wait=0, retry_delay=1, retries=3)
+    clients[0]._open = True
+
+    with pytest.raises(FakeConnectionException, match="link down"):
+        inverter.read_raw_value(make_register(), retries=1, retry_delay=0)
+
+    assert clients[0].close_calls == 0
+    assert clients[0].connect_calls == 0
+    assert clients[0].read_calls == [(123, 1, inverter.modbus_unit)]
+
+
 def test_read_raw_value_raises_unsupported_register_without_retry(monkeypatch):
     clients = install_fake_client(
         monkeypatch,
@@ -320,6 +337,23 @@ def test_read_range_retries_after_connection_exception(monkeypatch):
         (40000, 3, inverter.modbus_unit),
         (40000, 3, inverter.modbus_unit),
     ]
+
+
+def test_read_range_single_retry_override_skips_reconnect(monkeypatch):
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[Raised(FakeConnectionException("link down"))],
+    )
+    monkeypatch.setattr(inv.time, "sleep", lambda *_: None)
+    inverter = inv.Sun2000("inverter.local", wait=0, retry_delay=1, retries=3)
+    clients[0]._open = True
+
+    with pytest.raises(FakeConnectionException, match="link down"):
+        inverter.read_range(40000, quantity=3, retries=1, retry_delay=0)
+
+    assert clients[0].close_calls == 0
+    assert clients[0].connect_calls == 0
+    assert clients[0].read_calls == [(40000, 3, inverter.modbus_unit)]
 
 
 def test_read_range_raises_unsupported_register_without_retry(monkeypatch):

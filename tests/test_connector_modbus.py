@@ -379,7 +379,7 @@ def test_get_data_prefers_batch_reads_for_contiguous_registers():
     }
 
     class RangeSun2000(FakeSun2000):
-        def read_range(self, start_address, quantity=0, end_address=0):
+        def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
             return batch_payloads[(start_address, end)]
@@ -418,7 +418,7 @@ def test_get_data_falls_back_to_single_reads_when_batching_unavailable():
     values = build_values()
 
     class NoRangeSun2000(FakeSun2000):
-        def read_range(self, start_address, quantity=0, end_address=0):
+        def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             raise RuntimeError("range reads unsupported")
 
     holder = {}
@@ -514,7 +514,7 @@ def test_get_data_disables_unsupported_optional_daily_realtime_range(caplog):
     }
 
     class OptionalRealtimeUnsupportedSun2000(FakeSun2000):
-        def read_range(self, start_address, quantity=0, end_address=0):
+        def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
             if (start_address, end) == (40562, 40563):
@@ -635,7 +635,7 @@ def test_get_data_reuses_cached_auxiliary_ranges_between_refresh_windows():
     }
 
     class CachedRangeSun2000(FakeSun2000):
-        def read_range(self, start_address, quantity=0, end_address=0):
+        def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
             return batch_payloads[(start_address, end)]
@@ -748,7 +748,7 @@ def test_get_data_refreshes_cached_energy_ranges_after_interval():
     }
 
     class CachedRangeSun2000(FakeSun2000):
-        def read_range(self, start_address, quantity=0, end_address=0):
+        def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
             return batch_payloads[(start_address, end)]
@@ -784,9 +784,144 @@ def test_get_data_refreshes_cached_energy_ranges_after_interval():
     ]
 
 
+def test_cached_auxiliary_refresh_uses_single_attempt_transport_policy():
+    values = build_values()
+    batch_payloads = {
+        (32064, 32085): _build_range_payload(
+            32064,
+            32085,
+            {
+                registers.InverterEquipmentRegister.InputPower: values[
+                    registers.InverterEquipmentRegister.InputPower
+                ],
+                registers.InverterEquipmentRegister.PhaseAVoltage: values[
+                    registers.InverterEquipmentRegister.PhaseAVoltage
+                ],
+                registers.InverterEquipmentRegister.PhaseBVoltage: values[
+                    registers.InverterEquipmentRegister.PhaseBVoltage
+                ],
+                registers.InverterEquipmentRegister.PhaseCVoltage: values[
+                    registers.InverterEquipmentRegister.PhaseCVoltage
+                ],
+                registers.InverterEquipmentRegister.PhaseACurrent: values[
+                    registers.InverterEquipmentRegister.PhaseACurrent
+                ],
+                registers.InverterEquipmentRegister.PhaseBCurrent: values[
+                    registers.InverterEquipmentRegister.PhaseBCurrent
+                ],
+                registers.InverterEquipmentRegister.PhaseCCurrent: values[
+                    registers.InverterEquipmentRegister.PhaseCCurrent
+                ],
+                registers.InverterEquipmentRegister.ActivePower: values[
+                    registers.InverterEquipmentRegister.ActivePower
+                ],
+                registers.InverterEquipmentRegister.PowerFactor: values[
+                    registers.InverterEquipmentRegister.PowerFactor
+                ],
+                registers.InverterEquipmentRegister.GridFrequency: values[
+                    registers.InverterEquipmentRegister.GridFrequency
+                ],
+            },
+        ),
+        (30075, 30076): _build_range_payload(
+            30075,
+            30076,
+            {
+                registers.InverterEquipmentRegister.MaximumActivePower: values[
+                    registers.InverterEquipmentRegister.MaximumActivePower
+                ],
+            },
+        ),
+        (32106, 32107): _build_range_payload(
+            32106,
+            32107,
+            {
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield: values[
+                    registers.InverterEquipmentRegister.AccumulatedEnergyYield
+                ],
+            },
+        ),
+        (32114, 32115): _build_range_payload(
+            32114,
+            32115,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYield: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYield
+                ],
+            },
+        ),
+        (40562, 40563): _build_range_payload(
+            40562,
+            40563,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+                ],
+            },
+        ),
+    }
+
+    class RetryAwareRangeSun2000(FakeSun2000):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.read_range_calls = []
+
+        def read_range(
+            self,
+            start_address,
+            quantity=0,
+            end_address=0,
+            retries=None,
+            retry_delay=None,
+            **_kwargs,
+        ):
+            end = end_address if end_address else start_address + quantity - 1
+            self.read_range_calls.append((start_address, end, retries, retry_delay))
+            return batch_payloads[(start_address, end)]
+
+    holder = {}
+    now = {"value": 0.0}
+
+    def factory(**_kwargs):
+        holder["instance"] = RetryAwareRangeSun2000(values=values)
+        return holder["instance"]
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=factory,
+        power_correction_factor=1.0,
+        time_fn=lambda: now["value"],
+    )
+    collector.set_phase_type("Single-phase")
+
+    collector.getData()
+    now["value"] = 11.0
+    collector.getData()
+
+    assert holder["instance"].read_range_calls == [
+        (32064, 32085, None, None),
+        (30075, 30076, None, None),
+        (32106, 32107, None, None),
+        (32114, 32115, None, None),
+        (40562, 40563, None, None),
+        (32064, 32085, None, None),
+        (32106, 32107, 1, 0),
+        (32114, 32115, 1, 0),
+        (40562, 40563, 1, 0),
+    ]
+
+
 def test_get_data_refreshes_main_power_range_every_cycle():
     first_values = build_values()
     second_values = build_values()
+    first_energy_forward = first_values[
+        registers.InverterEquipmentRegister.AccumulatedEnergyYield
+    ]
+    first_daily_energy = first_values[
+        registers.InverterEquipmentRegister.DailyEnergyYield
+    ]
+    first_daily_energy_realtime = first_values[
+        registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+    ]
     first_values[registers.InverterEquipmentRegister.ActivePower] = 900.0
     first_values[registers.InverterEquipmentRegister.InputPower] = 950.0
     second_values[registers.InverterEquipmentRegister.ActivePower] = 1200.0
@@ -806,27 +941,27 @@ def test_get_data_refreshes_main_power_range_every_cycle():
             32106,
             32107,
             {
-                registers.InverterEquipmentRegister.AccumulatedEnergyYield: first_values[
-                    registers.InverterEquipmentRegister.AccumulatedEnergyYield
-                ],
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield: (
+                    first_energy_forward
+                ),
             },
         ),
         (32114, 32115): _build_range_payload(
             32114,
             32115,
             {
-                registers.InverterEquipmentRegister.DailyEnergyYield: first_values[
-                    registers.InverterEquipmentRegister.DailyEnergyYield
-                ],
+                registers.InverterEquipmentRegister.DailyEnergyYield: (
+                    first_daily_energy
+                ),
             },
         ),
         (40562, 40563): _build_range_payload(
             40562,
             40563,
             {
-                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: first_values[
-                    registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
-                ],
+                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: (
+                    first_daily_energy_realtime
+                ),
             },
         ),
     }
@@ -911,7 +1046,7 @@ def test_get_data_refreshes_main_power_range_every_cycle():
             super().__init__(**kwargs)
             self._main_reads = 0
 
-        def read_range(self, start_address, quantity=0, end_address=0):
+        def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
             if (start_address, end) == (32064, 32085):

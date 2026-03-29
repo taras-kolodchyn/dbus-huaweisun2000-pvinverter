@@ -124,15 +124,24 @@ class Sun2000:
         """Check if underlying tcp socket is open"""
         return self.inverter.is_socket_open()
 
-    def read_raw_value(self, register):
+    def _resolve_retry_policy(self, retries=None, retry_delay=None):
+        effective_retries = self.retries if retries is None else retries
+        effective_retry_delay = self.retry_delay if retry_delay is None else retry_delay
+        return max(int(effective_retries), 1), max(float(effective_retry_delay), 0.0)
+
+    def read_raw_value(self, register, retries=None, retry_delay=None):
         # Try to read the register value
         # with several retries in case of communication errors
         if not self.isConnected():
             raise ValueError("Inverter is not connected")
 
+        effective_retries, effective_retry_delay = self._resolve_retry_policy(
+            retries=retries,
+            retry_delay=retry_delay,
+        )
         attempt = 0
         last_exception = None
-        while attempt < self.retries:
+        while attempt < effective_retries:
             try:
                 register_value = self.inverter.read_holding_registers(
                     register.value.address,
@@ -154,7 +163,11 @@ class Sun2000:
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
                 LOG.error("Read attempt %d failed: %s", attempt + 1, ex)
-                time.sleep(self.retry_delay)
+                attempt += 1
+                if attempt >= effective_retries:
+                    break
+                if effective_retry_delay:
+                    time.sleep(effective_retry_delay)
                 # Try to reconnect before next attempt
                 try:
                     self.disconnect()
@@ -164,7 +177,6 @@ class Sun2000:
                     self.connect()
                 except Exception as connect_ex:
                     LOG.warning("Error while reconnecting: %s", connect_ex)
-            attempt += 1
         # All retries failed, raise the last exception
         LOG.critical("All retries to read register failed")
         raise (
@@ -173,16 +185,24 @@ class Sun2000:
             else Exception("Unknown error during register read")
         )
 
-    def read(self, register):
-        raw_value = self.read_raw_value(register)
+    def read(self, register, retries=None, retry_delay=None):
+        raw_value = self.read_raw_value(
+            register,
+            retries=retries,
+            retry_delay=retry_delay,
+        )
 
         if register.value.gain is None:
             return raw_value
         else:
             return raw_value / register.value.gain
 
-    def read_formatted(self, register):
-        value = self.read(register)
+    def read_formatted(self, register, retries=None, retry_delay=None):
+        value = self.read(
+            register,
+            retries=retries,
+            retry_delay=retry_delay,
+        )
 
         if register.value.unit is not None:
             return f"{value} {register.value.unit}"
@@ -191,7 +211,14 @@ class Sun2000:
         else:
             return value
 
-    def read_range(self, start_address, quantity=0, end_address=0):
+    def read_range(
+        self,
+        start_address,
+        quantity=0,
+        end_address=0,
+        retries=None,
+        retry_delay=None,
+    ):
         # Try to read a range of registers with retries
         if quantity == 0 and end_address == 0:
             raise ValueError(
@@ -211,9 +238,13 @@ class Sun2000:
         if end_address != 0:
             quantity = end_address - start_address + 1
 
+        effective_retries, effective_retry_delay = self._resolve_retry_policy(
+            retries=retries,
+            retry_delay=retry_delay,
+        )
         attempt = 0
         last_exception = None
-        while attempt < self.retries:
+        while attempt < effective_retries:
             try:
                 register_range_value = self.inverter.read_holding_registers(
                     start_address,
@@ -231,7 +262,11 @@ class Sun2000:
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
                 LOG.error("Range read attempt %d failed: %s", attempt + 1, ex)
-                time.sleep(self.retry_delay)
+                attempt += 1
+                if attempt >= effective_retries:
+                    break
+                if effective_retry_delay:
+                    time.sleep(effective_retry_delay)
                 # Try to reconnect before next attempt
                 try:
                     self.disconnect()
@@ -241,7 +276,6 @@ class Sun2000:
                     self.connect()
                 except Exception as connect_ex:
                     LOG.warning("Error while reconnecting: %s", connect_ex)
-            attempt += 1
         # All retries failed, raise the last exception
         LOG.critical("All retries to read range of registers failed")
         raise (
