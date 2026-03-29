@@ -37,6 +37,8 @@ def test_readme_release_download_matches_workflow_asset_name():
     assert "dbus-huaweisun2000-pvinverter.zip" in workflow
     assert "python-3.12-blue.svg" in readme
     assert "python-version: '3.12'" in workflow
+    assert "Venus OS (**v3.71+**)" in readme
+    assert "below v3.71 is not supported" in readme
 
 
 def test_venus_docker_harness_exports_version_for_editable_installs():
