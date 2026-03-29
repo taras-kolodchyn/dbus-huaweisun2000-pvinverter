@@ -63,6 +63,10 @@ _PV_INPUT_DATA_RANGE = {
     "refresh_interval_s": config.PV_INPUT_REFRESH_INTERVAL_S,
     "registers": _PV_RANGE_REGISTERS,
 }
+_LIVE_COMBINED_DATA_RANGE = {
+    "start": _PV_INPUT_DATA_RANGE["start"],
+    "end": _MAIN_DATA_RANGE["end"],
+}
 _AUXILIARY_DATA_RANGES = (
     {
         "start": 30075,
@@ -303,20 +307,13 @@ class ModbusDataCollector2000Delux:
         optional_key = group.get("optional_key")
         cache_key = self._group_cache_key(group)
         cached_values = self._auxiliary_group_cache.get(cache_key)
-        refresh_interval = group.get("refresh_interval_s")
-        read_kwargs = {}
+        read_kwargs = self._build_group_read_kwargs(group, cached_values)
 
         if optional_key in self._disabled_optional_keys:
             return dict(cached_values or {})
 
-        if refresh_interval is not None and cached_values is not None:
-            updated_at = self._auxiliary_group_updated_at.get(cache_key)
-            if (
-                updated_at is not None
-                and (self._time_fn() - updated_at) < refresh_interval
-            ):
-                return dict(cached_values)
-            read_kwargs = {"retries": 1, "retry_delay": 0}
+        if self._can_reuse_cached_group(group, cached_values):
+            return dict(cached_values)
 
         try:
             payload = self.invSun2000.read_range(
@@ -345,10 +342,43 @@ class ModbusDataCollector2000Delux:
                 return dict(cached_values)
             return {}
 
+        values = self._decode_group_payload(
+            group,
+            payload,
+            payload_start=group["start"],
+        )
+        self._cache_group_values(group, values)
+        return values
+
+    def _can_reuse_cached_group(self, group, cached_values):
+        refresh_interval = group.get("refresh_interval_s")
+        if refresh_interval is None or cached_values is None:
+            return False
+
+        updated_at = self._auxiliary_group_updated_at.get(self._group_cache_key(group))
+        return (
+            updated_at is not None and (self._time_fn() - updated_at) < refresh_interval
+        )
+
+    @staticmethod
+    def _build_group_read_kwargs(group, cached_values):
+        if group.get("refresh_interval_s") is not None and cached_values is not None:
+            return {"retries": 1, "retry_delay": 0}
+        return {}
+
+    def _cache_group_values(self, group, values):
+        if group.get("refresh_interval_s") is None or not values:
+            return
+
+        cache_key = self._group_cache_key(group)
+        self._auxiliary_group_cache[cache_key] = dict(values)
+        self._auxiliary_group_updated_at[cache_key] = self._time_fn()
+
+    def _decode_group_payload(self, group, payload, *, payload_start):
         values = {}
         for key, register in group["registers"].items():
             try:
-                values[key] = _decode_range_register(payload, group["start"], register)
+                values[key] = _decode_range_register(payload, payload_start, register)
             except Exception as err:
                 LOG.warning(
                     "Could not decode %s from batch %s-%s: %s",
@@ -357,10 +387,53 @@ class ModbusDataCollector2000Delux:
                     group["end"],
                     err,
                 )
-        if refresh_interval is not None and values:
-            self._auxiliary_group_cache[cache_key] = dict(values)
-            self._auxiliary_group_updated_at[cache_key] = self._time_fn()
         return values
+
+    def _read_live_batch_values(self):
+        pv_cached_values = self._auxiliary_group_cache.get(
+            self._group_cache_key(_PV_INPUT_DATA_RANGE)
+        )
+        if _PV_INPUT_DATA_RANGE[
+            "optional_key"
+        ] not in self._disabled_optional_keys and not self._can_reuse_cached_group(
+            _PV_INPUT_DATA_RANGE, pv_cached_values
+        ):
+            combined_kwargs = self._build_group_read_kwargs(
+                _PV_INPUT_DATA_RANGE,
+                pv_cached_values,
+            )
+            try:
+                payload = self.invSun2000.read_range(
+                    _LIVE_COMBINED_DATA_RANGE["start"],
+                    end_address=_LIVE_COMBINED_DATA_RANGE["end"],
+                    **combined_kwargs,
+                )
+            except Exception as err:
+                LOG.debug(
+                    "Combined live read %s-%s unavailable, "
+                    "falling back to separate reads: %s",
+                    _LIVE_COMBINED_DATA_RANGE["start"],
+                    _LIVE_COMBINED_DATA_RANGE["end"],
+                    err,
+                )
+            else:
+                batch_values = self._decode_group_payload(
+                    _MAIN_DATA_RANGE,
+                    payload,
+                    payload_start=_LIVE_COMBINED_DATA_RANGE["start"],
+                )
+                pv_values = self._decode_group_payload(
+                    _PV_INPUT_DATA_RANGE,
+                    payload,
+                    payload_start=_LIVE_COMBINED_DATA_RANGE["start"],
+                )
+                self._cache_group_values(_PV_INPUT_DATA_RANGE, pv_values)
+                batch_values.update(pv_values)
+                return batch_values
+
+        batch_values = self._read_range_group(_MAIN_DATA_RANGE)
+        batch_values.update(self._read_range_group(_PV_INPUT_DATA_RANGE))
+        return batch_values
 
     def _disable_optional_key(self, optional_key, group, err):
         if optional_key in self._disabled_optional_keys:
@@ -505,8 +578,7 @@ class ModbusDataCollector2000Delux:
             return None
 
         data = {}
-        batch_values = self._read_range_group(_MAIN_DATA_RANGE)
-        batch_values.update(self._read_range_group(_PV_INPUT_DATA_RANGE))
+        batch_values = self._read_live_batch_values()
         for group in _AUXILIARY_DATA_RANGES:
             batch_values.update(self._read_range_group(group))
 

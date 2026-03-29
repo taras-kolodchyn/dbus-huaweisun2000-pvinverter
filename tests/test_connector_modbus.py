@@ -170,10 +170,38 @@ def _build_pv_input_range_payload(values):
     )
 
 
+def _build_combined_live_range_payload(values):
+    payload_values = {}
+    for register in cm._MAIN_DATA_RANGE["registers"].values():
+        if register in values:
+            payload_values[register] = values[register]
+
+    for (
+        _voltage_key,
+        _current_key,
+        voltage_register,
+        current_register,
+    ) in cm._PV_STRING_SPECS:
+        if voltage_register in values:
+            payload_values[voltage_register] = values[voltage_register]
+        if current_register in values:
+            payload_values[current_register] = values[current_register]
+
+    return _build_range_payload(
+        cm._LIVE_COMBINED_DATA_RANGE["start"],
+        cm._LIVE_COMBINED_DATA_RANGE["end"],
+        payload_values,
+    )
+
+
 MAIN_RANGE_KEY = (cm._MAIN_DATA_RANGE["start"], cm._MAIN_DATA_RANGE["end"])
 PV_INPUT_RANGE_KEY = (
     cm._PV_INPUT_DATA_RANGE["start"],
     cm._PV_INPUT_DATA_RANGE["end"],
+)
+COMBINED_LIVE_RANGE_KEY = (
+    cm._LIVE_COMBINED_DATA_RANGE["start"],
+    cm._LIVE_COMBINED_DATA_RANGE["end"],
 )
 
 
@@ -417,6 +445,7 @@ def test_get_data_prefers_batch_reads_for_contiguous_registers():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -486,8 +515,7 @@ def test_get_data_prefers_batch_reads_for_contiguous_registers():
     assert data["/Yield/Power"] == 9500.0
     assert holder["instance"].read_calls == []
     assert holder["instance"].read_range_calls == [
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
@@ -531,6 +559,7 @@ def test_get_data_disables_unsupported_optional_daily_realtime_range(caplog):
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -609,6 +638,7 @@ def test_get_data_reuses_cached_auxiliary_ranges_between_refresh_windows():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -674,14 +704,12 @@ def test_get_data_reuses_cached_auxiliary_ranges_between_refresh_windows():
     assert first["/Ac/Energy/Today"] == 12340.0
     assert second["/Ac/Energy/Today"] == 12340.0
     assert holder["instance"].read_range_calls == [
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
     ]
 
 
@@ -690,6 +718,7 @@ def test_get_data_reuses_cached_pv_input_values_after_transient_range_failure():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -772,10 +801,12 @@ def test_get_data_reuses_cached_pv_input_values_after_transient_range_failure():
     assert first["/Pv/I"] == 19.0
     assert second["/Pv/V"] == 500.0
     assert second["/Pv/I"] == 19.0
-    assert holder["instance"].read_range_calls[:2] == [
-        (*MAIN_RANGE_KEY, None, None),
-        (*PV_INPUT_RANGE_KEY, None, None),
-    ]
+    assert holder["instance"].read_range_calls[0] == (
+        *COMBINED_LIVE_RANGE_KEY,
+        None,
+        None,
+    )
+    assert (*PV_INPUT_RANGE_KEY, None, None) not in holder["instance"].read_range_calls
     assert (*PV_INPUT_RANGE_KEY, 1, 0) not in holder["instance"].read_range_calls
 
 
@@ -784,6 +815,7 @@ def test_get_data_reuses_cached_pv_input_values_within_refresh_window():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -857,8 +889,14 @@ def test_get_data_reuses_cached_pv_input_values_within_refresh_window():
     assert first["/Pv/V"] == 500.0
     assert second["/Pv/V"] == 500.0
     assert (
-        holder["instance"].read_range_calls.count((*PV_INPUT_RANGE_KEY, None, None))
+        holder["instance"].read_range_calls.count(
+            (*COMBINED_LIVE_RANGE_KEY, None, None)
+        )
         == 1
+    )
+    assert (
+        holder["instance"].read_range_calls.count((*PV_INPUT_RANGE_KEY, None, None))
+        == 0
     )
 
 
@@ -867,6 +905,7 @@ def test_get_data_refreshes_cached_pv_input_values_after_interval():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -938,10 +977,12 @@ def test_get_data_refreshes_cached_pv_input_values_after_interval():
     collector.getData()
 
     assert (
-        holder["instance"].read_range_calls.count((*PV_INPUT_RANGE_KEY, None, None))
+        holder["instance"].read_range_calls.count(
+            (*COMBINED_LIVE_RANGE_KEY, None, None)
+        )
         == 1
     )
-    assert (*PV_INPUT_RANGE_KEY, 1, 0) in holder["instance"].read_range_calls
+    assert (*COMBINED_LIVE_RANGE_KEY, 1, 0) in holder["instance"].read_range_calls
 
 
 def test_get_data_refreshes_cached_energy_ranges_after_interval():
@@ -949,6 +990,7 @@ def test_get_data_refreshes_cached_energy_ranges_after_interval():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -1012,14 +1054,12 @@ def test_get_data_refreshes_cached_energy_ranges_after_interval():
     collector.getData()
 
     assert holder["instance"].read_range_calls == [
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
@@ -1031,6 +1071,7 @@ def test_cached_auxiliary_refresh_uses_single_attempt_transport_policy():
     batch_payloads = {
         MAIN_RANGE_KEY: _build_main_range_payload(values),
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -1106,14 +1147,12 @@ def test_cached_auxiliary_refresh_uses_single_attempt_transport_policy():
     collector.getData()
 
     assert holder["instance"].read_range_calls == [
-        (*MAIN_RANGE_KEY, None, None),
-        (*PV_INPUT_RANGE_KEY, None, None),
+        (*COMBINED_LIVE_RANGE_KEY, None, None),
         (30075, 30076, None, None),
         (32106, 32107, None, None),
         (32114, 32115, None, None),
         (40562, 40563, None, None),
-        (*MAIN_RANGE_KEY, None, None),
-        (*PV_INPUT_RANGE_KEY, 1, 0),
+        (*COMBINED_LIVE_RANGE_KEY, 1, 0),
         (32106, 32107, 1, 0),
         (32114, 32115, 1, 0),
         (40562, 40563, 1, 0),
@@ -1139,6 +1178,7 @@ def test_get_data_refreshes_main_power_range_every_cycle():
 
     auxiliary_payloads = {
         PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(first_values),
+        COMBINED_LIVE_RANGE_KEY: _build_combined_live_range_payload(first_values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -1181,6 +1221,10 @@ def test_get_data_refreshes_main_power_range_every_cycle():
         _build_main_range_payload(first_values),
         _build_main_range_payload(second_values),
     ]
+    combined_payloads = [
+        _build_combined_live_range_payload(first_values),
+        _build_combined_live_range_payload(second_values),
+    ]
 
     class DynamicMainRangeSun2000(FakeSun2000):
         def __init__(self, **kwargs):
@@ -1190,8 +1234,13 @@ def test_get_data_refreshes_main_power_range_every_cycle():
         def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
-            if (start_address, end) == MAIN_RANGE_KEY:
-                payload = main_payloads[min(self._main_reads, len(main_payloads) - 1)]
+            if (start_address, end) in (MAIN_RANGE_KEY, COMBINED_LIVE_RANGE_KEY):
+                payloads = (
+                    main_payloads
+                    if (start_address, end) == MAIN_RANGE_KEY
+                    else combined_payloads
+                )
+                payload = payloads[min(self._main_reads, len(payloads) - 1)]
                 self._main_reads += 1
                 return payload
             return auxiliary_payloads[(start_address, end)]
@@ -1219,12 +1268,10 @@ def test_get_data_refreshes_main_power_range_every_cycle():
     assert second["/Ac/Power"] == 1200.0
     assert second["/Dc/Power"] == 1300.0
     assert holder["instance"].read_range_calls == [
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
-        MAIN_RANGE_KEY,
-        PV_INPUT_RANGE_KEY,
+        COMBINED_LIVE_RANGE_KEY,
     ]
