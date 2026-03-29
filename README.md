@@ -68,8 +68,8 @@ Recommended for stable installs:
 
 ```bash
 cd /data
-wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases/latest/download/dbus-huaweisun2000-pvinverter.zip -O dbus-huaweisun2000-pvinverter.zip || \
-  wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases/download/v1.1.0/dbus-huaweisun2000-pvinverter-v1.1.0.zip -O dbus-huaweisun2000-pvinverter.zip
+wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases/latest/download/dbus-huaweisun2000-pvinverter.zip -O dbus-huaweisun2000-pvinverter.zip
+rm -rf dbus-huaweisun2000-pvinverter
 unzip dbus-huaweisun2000-pvinverter.zip -d dbus-huaweisun2000-pvinverter
 cd dbus-huaweisun2000-pvinverter
 chmod +x install.sh
@@ -86,8 +86,9 @@ Or download `main` directly on the device:
 
 ```bash
 cd /data
-wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip
-unzip main.zip -d dbus-huaweisun2000-pvinverter
+wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip -O dbus-huaweisun2000-pvinverter-main.zip
+unzip dbus-huaweisun2000-pvinverter-main.zip
+rm -rf dbus-huaweisun2000-pvinverter
 mv dbus-huaweisun2000-pvinverter-main dbus-huaweisun2000-pvinverter
 chmod +x dbus-huaweisun2000-pvinverter/install.sh
 sh dbus-huaweisun2000-pvinverter/install.sh

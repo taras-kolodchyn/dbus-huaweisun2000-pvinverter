@@ -44,6 +44,18 @@ def test_readme_release_download_matches_workflow_asset_name():
     assert "Classic UI" not in readme
     assert not (repo_root / "gui-v2").exists()
     assert not (repo_root / "patches" / "gui-v2").exists()
+    assert (
+        "releases/download/v1.1.0/dbus-huaweisun2000-pvinverter-v1.1.0.zip"
+        not in readme
+    )
+    assert "rm -rf dbus-huaweisun2000-pvinverter" in readme
+    assert (
+        "wget https://github.com/taras-kolodchyn/"
+        "dbus-huaweisun2000-pvinverter/archive/refs/heads/main.zip "
+        "-O dbus-huaweisun2000-pvinverter-main.zip"
+    ) in readme
+    assert "unzip dbus-huaweisun2000-pvinverter-main.zip" in readme
+    assert "unzip main.zip -d dbus-huaweisun2000-pvinverter" not in readme
 
 
 def test_venus_docker_harness_exports_version_for_editable_installs():
