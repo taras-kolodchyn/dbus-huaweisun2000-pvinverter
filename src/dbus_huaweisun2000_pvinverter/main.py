@@ -23,6 +23,7 @@ from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 
 from .connector_modbus import ModbusDataCollector2000Delux
+from .metrics import SERVICE_METRICS
 from .settings import HuaweiSUN2000Settings
 from . import config
 
@@ -244,6 +245,28 @@ def _format_n(p, v):
     return str(v)
 
 
+FORMATTERS = {
+    "a": _format_a,
+    "hz": _format_hz,
+    "kwh": _format_kwh,
+    "n": _format_n,
+    "v": _format_v,
+    "w": _format_w,
+    "wh": _format_wh,
+}
+
+
+def _build_dbus_paths():
+    paths = {}
+    for path, spec in SERVICE_METRICS.items():
+        path_spec = {"initial": spec["initial"]}
+        formatter_key = spec.get("formatter")
+        if formatter_key is not None:
+            path_spec["textformat"] = FORMATTERS[formatter_key]
+        paths[path] = path_spec
+    return paths
+
+
 def _is_unconfigured_host(host):
     return str(host).strip() in UNCONFIGURED_MODBUS_HOSTS
 
@@ -318,37 +341,7 @@ def main():
     try:
         logging.info("Starting up")
 
-        dbuspath = {
-            "/Ac/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/Energy/Today": {"initial": None, "textformat": _format_wh},
-            #
-            "/Ac/L1/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/L1/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/L1/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/L1/Frequency": {"initial": None, "textformat": _format_hz},
-            "/Ac/L1/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/L1/Energy/Today": {"initial": None, "textformat": _format_wh},
-            #
-            "/Ac/MaxPower": {"initial": 20000, "textformat": _format_w},
-            "/Ac/StatusCode": {"initial": 0, "textformat": _format_n},
-            "/Ac/L2/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/L2/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/L2/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/L2/Frequency": {"initial": None, "textformat": _format_hz},
-            "/Ac/L2/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/L2/Energy/Today": {"initial": None, "textformat": _format_wh},
-            "/Ac/L3/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/L3/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/L3/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/L3/Frequency": {"initial": None, "textformat": _format_hz},
-            "/Ac/L3/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/L3/Energy/Today": {"initial": None, "textformat": _format_wh},
-            "/Dc/Power": {"initial": 0, "textformat": _format_w},
-            "/Status": {"initial": ""},
-        }
+        dbuspath = _build_dbus_paths()
 
         # If HardwareVersion is empty or None, assign it the value of PN
         if not staticdata["HardwareVersion"]:

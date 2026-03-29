@@ -227,6 +227,15 @@ def test_mgmt_and_info_paths_exist():
     assert "/Info/PhaseType" in p
 
 
+def test_build_dbus_paths_uses_shared_metric_schema():
+    paths = m._build_dbus_paths()
+    assert paths["/Ac/Power"]["initial"] == 0
+    assert callable(paths["/Ac/Power"]["textformat"])
+    assert paths["/Ac/MaxPower"]["initial"] == 20000
+    assert paths["/Status"]["initial"] == ""
+    assert "textformat" not in paths["/Status"]
+
+
 def test_basic_required_paths_and_defaults():
     svc, _ = build_service()
     p = svc._dbusservice.paths

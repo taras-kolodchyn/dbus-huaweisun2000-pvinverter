@@ -3,6 +3,7 @@ from typing import Optional
 
 from dbus.mainloop.glib import DBusGMainLoop
 
+from .metrics import DIRECT_REGISTER_METRICS
 from .settings import HuaweiSUN2000Settings
 from .sun2000_modbus import inverter
 from .sun2000_modbus import registers
@@ -141,59 +142,9 @@ class ModbusDataCollector2000Delux:
 
         data = {}
 
-        dbuspath = {
-            "/Ac/Power": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.ActivePower,
-                "type": safe_float,
-            },
-            "/Ac/L1/Current": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.PhaseACurrent,
-                "type": safe_float,
-            },
-            "/Ac/L1/Voltage": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.PhaseAVoltage,
-                "type": safe_float,
-            },
-            "/Ac/L2/Current": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.PhaseBCurrent,
-                "type": safe_float,
-            },
-            "/Ac/L2/Voltage": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.PhaseBVoltage,
-                "type": safe_float,
-            },
-            "/Ac/L3/Current": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.PhaseCCurrent,
-                "type": safe_float,
-            },
-            "/Ac/L3/Voltage": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.PhaseCVoltage,
-                "type": safe_float,
-            },
-            "/Dc/Power": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.InputPower,
-                "type": safe_float,
-            },
-            "/Ac/MaxPower": {
-                "initial": 0,
-                "sun2000": registers.InverterEquipmentRegister.MaximumActivePower,
-                "type": safe_float,
-            },
-        }
-
-        for k, v in dbuspath.items():
-            s = v.get("sun2000")
-            value_type = v.get("type", safe_float)
-            raw = self.invSun2000.read(s)
-            data[k] = value_type(raw, v.get("initial", 0))
+        for path, spec in DIRECT_REGISTER_METRICS.items():
+            raw = self.invSun2000.read(spec["register"])
+            data[path] = safe_float(raw, spec["initial"])
 
         # state1 is read but not used
         # state1 = self.invSun2000.read(registers.InverterEquipmentRegister.State1)
