@@ -5,6 +5,7 @@ import sys
 import pathlib
 import importlib.util
 import types
+import logging
 
 # ---- Stubs so the module imports without system deps (dbus/GLib/vedbus/etc) ----
 # dbus + mainloop
@@ -342,6 +343,15 @@ def test_update_with_status_message_sets_status_and_latency():
     assert isinstance(p["/Latency"], (int, float))
 
 
+def test_update_success_avoids_info_log_spam(caplog):
+    svc, _ = build_service()
+
+    with caplog.at_level(logging.INFO, logger=m.LOG.name):
+        assert svc._update() is True
+
+    assert not [record for record in caplog.records if record.levelno == logging.INFO]
+
+
 def test_update_handles_none_data_and_disarms_connection():
     class NoneConnector:
         def getData(self):
@@ -368,3 +378,28 @@ def test_update_handles_none_data_and_disarms_connection():
     assert p["/Status"].startswith("Update failed")
     assert svc._failure_count == 1
     assert svc._backoff_until is not None
+
+
+def test_update_failure_logs_warning_with_backoff(caplog):
+    class RaisingConnector:
+        def getData(self):
+            raise RuntimeError("boom")
+
+    settings = FakeSettingsForService()
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={"/Ac/Power": {"initial": 0, "textformat": m._format_w}},
+        data_connector=RaisingConnector(),
+        service_factory=FakeService,
+        timeout_add=lambda ms, func: True,
+    )
+
+    with caplog.at_level(logging.WARNING, logger=m.LOG.name):
+        assert svc._update() is True
+
+    warnings = [
+        record.message for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert any("Update failed for test.service" in message for message in warnings)
+    assert any("retry in" in message for message in warnings)

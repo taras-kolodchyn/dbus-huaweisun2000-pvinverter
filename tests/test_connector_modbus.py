@@ -1,6 +1,7 @@
 import sys
 import types
 import pathlib
+import logging
 
 
 class _FakeModbusTcpClient:
@@ -233,3 +234,46 @@ def test_get_static_data_uses_detected_phase_type_and_override():
 
     override_staticdata = collector.getStaticData(phase_type_override="Three-phase")
     assert override_staticdata["PhaseType"] == cm.PHASE_TYPE_THREE
+
+
+def test_get_static_data_uses_typed_fallbacks_for_missing_fields(caplog):
+    class FailingStaticSun2000(FakeSun2000):
+        def read(self, register):
+            if register in {
+                registers.InverterEquipmentRegister.SN,
+                registers.InverterEquipmentRegister.PN,
+                registers.InverterEquipmentRegister.ModelID,
+                registers.InverterEquipmentRegister.SoftwareVersion,
+                registers.InverterEquipmentRegister.HardwareVersion,
+                registers.InverterEquipmentRegister.NumberOfPVStrings,
+                registers.InverterEquipmentRegister.NumberOfMPPTrackers,
+            }:
+                raise RuntimeError(f"missing {register.name}")
+            return super().read(register)
+
+        def read_formatted(self, register):
+            if register in {
+                registers.InverterEquipmentRegister.Model,
+                registers.InverterEquipmentRegister.FirmwareVersion,
+            }:
+                raise RuntimeError(f"missing {register.name}")
+            return super().read_formatted(register)
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=lambda **_: FailingStaticSun2000(values={})
+    )
+
+    with caplog.at_level(logging.WARNING, logger=cm.LOG.name):
+        staticdata = collector.getStaticData()
+
+    assert staticdata["Model"] == "unknown"
+    assert staticdata["SN"] == "unknown"
+    assert staticdata["PN"] == "unknown"
+    assert staticdata["FirmwareVersion"] == "unknown"
+    assert staticdata["SoftwareVersion"] == "unknown"
+    assert staticdata["HardwareVersion"] == "unknown"
+    assert staticdata["ModelID"] == 0
+    assert staticdata["NumberOfPVStrings"] == 0
+    assert staticdata["NumberOfMPPTrackers"] == 0
+    assert staticdata["PhaseType"] == cm.PHASE_TYPE_UNKNOWN
+    assert any("Could not read ModelID" in record.message for record in caplog.records)

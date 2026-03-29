@@ -17,6 +17,55 @@ PHASE_TYPE_UNKNOWN = "Unknown"
 
 _SINGLE_PHASE_MODEL_MARKERS = ("-L1",)
 _THREE_PHASE_MODEL_MARKERS = ("-M0", "-M1", "-M2", "-M3", "-M5", "-MB0", "-MAP0")
+_STATIC_DATA_SPECS = (
+    {
+        "name": "Model",
+        "register": registers.InverterEquipmentRegister.Model,
+        "default": "unknown",
+        "formatted": True,
+    },
+    {
+        "name": "SN",
+        "register": registers.InverterEquipmentRegister.SN,
+        "default": "unknown",
+    },
+    {
+        "name": "PN",
+        "register": registers.InverterEquipmentRegister.PN,
+        "default": "unknown",
+    },
+    {
+        "name": "ModelID",
+        "register": registers.InverterEquipmentRegister.ModelID,
+        "default": 0,
+    },
+    {
+        "name": "FirmwareVersion",
+        "register": registers.InverterEquipmentRegister.FirmwareVersion,
+        "default": "unknown",
+        "formatted": True,
+    },
+    {
+        "name": "SoftwareVersion",
+        "register": registers.InverterEquipmentRegister.SoftwareVersion,
+        "default": "unknown",
+    },
+    {
+        "name": "HardwareVersion",
+        "register": registers.InverterEquipmentRegister.HardwareVersion,
+        "default": "unknown",
+    },
+    {
+        "name": "NumberOfPVStrings",
+        "register": registers.InverterEquipmentRegister.NumberOfPVStrings,
+        "default": 0,
+    },
+    {
+        "name": "NumberOfMPPTrackers",
+        "register": registers.InverterEquipmentRegister.NumberOfMPPTrackers,
+        "default": 0,
+    },
+)
 
 
 def normalize_phase_type(value) -> Optional[str]:
@@ -63,7 +112,8 @@ def safe_int(val, default=0):
     try:
         return int(val)
     except (TypeError, ValueError):
-        LOG.warning("Modbus value is invalid: %s, using %s", val, default)
+        if val is not None:
+            LOG.warning("Modbus value is invalid: %s, using %s", val, default)
         return default
 
 
@@ -71,8 +121,14 @@ def safe_float(val, default=0.0):
     try:
         return float(val)
     except (TypeError, ValueError):
-        LOG.warning("Modbus value is invalid: %s, using %s", val, default)
+        if val is not None:
+            LOG.warning("Modbus value is invalid: %s, using %s", val, default)
         return default
+
+
+def _clean_static_string(value, default):
+    normalized = str(value or "").replace("\0", "").strip()
+    return normalized or default
 
 
 state1Readable = {
@@ -272,7 +328,7 @@ class ModbusDataCollector2000Delux:
         Collects static information from the inverter using Modbus TCP.
         Returns a dictionary with keys such as SN, ModelID, Model, FirmwareVersion,
         SoftwareVersion, HardwareVersion, etc.
-        If a value cannot be read, sets it to 'unknown' and logs a warning.
+        If a value cannot be read, uses a typed default and logs a warning.
         """
         if not self.invSun2000.connect():
             LOG.error("Connection error Modbus TCP")
@@ -280,52 +336,40 @@ class ModbusDataCollector2000Delux:
 
         data = {}
 
-        def safe_read(register, name, formatted=False):
+        def safe_read(register, name, default, formatted=False):
             try:
-                if formatted:
-                    return str(self.invSun2000.read_formatted(register)).replace(
-                        "\0", ""
-                    )
-                else:
-                    return self.invSun2000.read(register)
+                value = (
+                    self.invSun2000.read_formatted(register)
+                    if formatted
+                    else self.invSun2000.read(register)
+                )
             except Exception as e:
                 LOG.warning("Could not read %s: %s", name, e)
-                return "unknown"
+                return default
 
-        # Main fields
-        data["Model"] = safe_read(
-            registers.InverterEquipmentRegister.Model, "Model", formatted=True
-        )
+            if isinstance(default, str):
+                return _clean_static_string(value, default)
+            return value
+
+        for spec in _STATIC_DATA_SPECS:
+            data[spec["name"]] = safe_read(
+                spec["register"],
+                spec["name"],
+                spec["default"],
+                formatted=spec.get("formatted", False),
+            )
+
         data["PhaseType"] = infer_phase_type(
             data["Model"], override=phase_type_override
         )
 
-        data["SN"] = safe_read(registers.InverterEquipmentRegister.SN, "SN")
-        data["PN"] = safe_read(registers.InverterEquipmentRegister.PN, "PN")
-        data["ModelID"] = safe_read(
-            registers.InverterEquipmentRegister.ModelID, "ModelID"
+        LOG.info(
+            "Static inverter info collected for model %s (SN %s, phase %s)",
+            data["Model"],
+            data["SN"],
+            data["PhaseType"],
         )
-        data["FirmwareVersion"] = safe_read(
-            registers.InverterEquipmentRegister.FirmwareVersion,
-            "FirmwareVersion",
-            formatted=True,
-        )
-        data["SoftwareVersion"] = safe_read(
-            registers.InverterEquipmentRegister.SoftwareVersion, "SoftwareVersion"
-        )
-        data["HardwareVersion"] = safe_read(
-            registers.InverterEquipmentRegister.HardwareVersion, "HardwareVersion"
-        )
-        data["NumberOfPVStrings"] = safe_read(
-            registers.InverterEquipmentRegister.NumberOfPVStrings, "NumberOfPVStrings"
-        )
-        data["NumberOfMPPTrackers"] = safe_read(
-            registers.InverterEquipmentRegister.NumberOfMPPTrackers,
-            "NumberOfMPPTrackers",
-        )
-
-        # Log all static data for debugging purposes
-        LOG.info("Static inverter info collected: %s", data)
+        LOG.debug("Static inverter metadata: %s", data)
         return data
 
 

@@ -144,19 +144,18 @@ class DbusSun2000Service:
         with self._dbusservice as s:
 
             try:
-                logging.info("start update")
                 meter_data: Optional[Dict[str, object]] = self._data_connector.getData()
-                logging.info("end update")
 
                 if meter_data is None:
                     raise RuntimeError("Modbus returned no data")
 
+                updated_paths = 0
                 for path, value in meter_data.items():
                     if path not in s:
                         LOG.debug("Ignoring unexpected datapoint %s", path)
                         continue
-                    logging.info("set %s to %s", path, value)
                     s[path] = value
+                    updated_paths += 1
 
                 # increment UpdateIndex - to show that new data is available (and wrap)
                 s["/UpdateIndex"] = (s["/UpdateIndex"] + 1) % 256
@@ -176,6 +175,25 @@ class DbusSun2000Service:
                     except KeyError:
                         pass
 
+                if self._failure_count > 0:
+                    LOG.info(
+                        (
+                            "Recovered %s after %d failed update(s); applied "
+                            "%d datapoints in %.1fms"
+                        ),
+                        self._service_name,
+                        self._failure_count,
+                        updated_paths,
+                        latency_ms,
+                    )
+                else:
+                    LOG.debug(
+                        "Updated %s with %d datapoints in %.1fms",
+                        self._service_name,
+                        updated_paths,
+                        latency_ms,
+                    )
+
                 self._failure_count = 0
                 self._backoff_until = None
 
@@ -189,7 +207,14 @@ class DbusSun2000Service:
                 self._backoff_until = time.monotonic() + backoff_seconds
                 s["/Connected"] = 0
                 s["/Status"] = f"Update failed: {e}"[:80]
-                logging.critical("Error at %s", "_update", exc_info=e)
+                LOG.warning(
+                    "Update failed for %s (failure #%d, retry in %.1fs): %s",
+                    self._service_name,
+                    self._failure_count,
+                    backoff_seconds,
+                    e,
+                )
+                LOG.debug("Update traceback for %s", self._service_name, exc_info=e)
 
         return True
 
