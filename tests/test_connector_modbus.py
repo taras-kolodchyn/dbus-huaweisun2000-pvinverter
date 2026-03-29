@@ -190,3 +190,46 @@ def test_daily_energy_falls_back_to_legacy_register():
     collector.set_phase_type("Single-phase")
     data = collector.getData()
     assert data["/Ac/Energy/Today"] == round(5.0 * 1000.0, 1)
+
+
+def test_infer_phase_type_handles_common_huawei_suffixes():
+    assert cm.infer_phase_type("SUN2000-3KTL-L1") == cm.PHASE_TYPE_SINGLE
+    assert cm.infer_phase_type("SUN2000-6KTL-L1") == cm.PHASE_TYPE_SINGLE
+    assert cm.infer_phase_type("SUN2000-8KTL-M1") == cm.PHASE_TYPE_THREE
+    assert cm.infer_phase_type("SUN2000-30KTL-M3") == cm.PHASE_TYPE_THREE
+    assert cm.infer_phase_type("SUN2000-17KTL-M5") == cm.PHASE_TYPE_THREE
+
+
+def test_infer_phase_type_allows_manual_override():
+    assert (
+        cm.infer_phase_type("SUN2000-3KTL-L1", override="three-phase")
+        == cm.PHASE_TYPE_THREE
+    )
+    assert (
+        cm.infer_phase_type("SUN2000-30KTL-M3", override="single-phase")
+        == cm.PHASE_TYPE_SINGLE
+    )
+
+
+def test_infer_phase_type_returns_unknown_for_unmapped_model():
+    assert cm.infer_phase_type("SUN2000-FOO") == cm.PHASE_TYPE_UNKNOWN
+    assert cm.infer_phase_type("") == cm.PHASE_TYPE_UNKNOWN
+
+
+def test_get_static_data_uses_detected_phase_type_and_override():
+    values = {
+        registers.InverterEquipmentRegister.Model: "SUN2000-3KTL-L1",
+        registers.InverterEquipmentRegister.ModelID: 101,
+        registers.InverterEquipmentRegister.SN: "SN123",
+        registers.InverterEquipmentRegister.PN: "PN123",
+    }
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=_factory_with_values(values)
+    )
+
+    staticdata = collector.getStaticData()
+    assert staticdata["Model"] == "SUN2000-3KTL-L1"
+    assert staticdata["PhaseType"] == cm.PHASE_TYPE_SINGLE
+
+    override_staticdata = collector.getStaticData(phase_type_override="Three-phase")
+    assert override_staticdata["PhaseType"] == cm.PHASE_TYPE_THREE

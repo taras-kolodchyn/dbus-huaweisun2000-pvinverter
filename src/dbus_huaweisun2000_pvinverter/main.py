@@ -268,7 +268,9 @@ def main():
     )
     logging.info(
         f"Settings: CustomName '{settings.get('custom_name')}', Position "
-        f"'{settings.get('position')}', UpdateTimeMS '{settings.get('update_time_ms')}'"
+        f"'{settings.get('position')}', UpdateTimeMS "
+        f"'{settings.get('update_time_ms')}', "
+        f"PhaseTypeOverride '{settings.get('phase_type_override')}'"
     )
     logging.info(
         f"Settings: PowerCorrectionFactor "
@@ -296,7 +298,9 @@ def main():
     )
 
     while True:
-        staticdata = modbus.getStaticData()
+        staticdata = modbus.getStaticData(
+            phase_type_override=settings.get("phase_type_override")
+        )
         if staticdata is None:
             logging.error(
                 "Didn't receive static data from modbus, error is above. Sleeping "

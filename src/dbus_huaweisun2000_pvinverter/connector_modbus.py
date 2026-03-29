@@ -9,6 +9,53 @@ from .sun2000_modbus import registers
 
 LOG = logging.getLogger(__name__)
 
+PHASE_TYPE_SINGLE = "Single-phase"
+PHASE_TYPE_THREE = "Three-phase"
+PHASE_TYPE_UNKNOWN = "Unknown"
+
+_SINGLE_PHASE_MODEL_MARKERS = ("-L1",)
+_THREE_PHASE_MODEL_MARKERS = ("-M0", "-M1", "-M2", "-M3", "-M5", "-MB0", "-MAP0")
+
+
+def normalize_phase_type(value) -> Optional[str]:
+    if value is None:
+        return None
+
+    normalized = str(value).strip().lower()
+    if normalized in ("", "auto", "unknown"):
+        return None
+    if normalized in ("single", "single-phase", "1", "1-phase"):
+        return PHASE_TYPE_SINGLE
+    if normalized in ("three", "three-phase", "3", "3-phase"):
+        return PHASE_TYPE_THREE
+    return None
+
+
+def infer_phase_type(model, override=None) -> str:
+    normalized_override = normalize_phase_type(override)
+    if normalized_override is not None:
+        return normalized_override
+
+    if override not in (None, "", "Auto", "auto", "Unknown", "unknown"):
+        LOG.warning(
+            "Unsupported phase type override %r, falling back to auto", override
+        )
+
+    model_str = str(model or "").replace("\0", "").upper().strip()
+    if not model_str:
+        return PHASE_TYPE_UNKNOWN
+
+    if any(marker in model_str for marker in _SINGLE_PHASE_MODEL_MARKERS):
+        return PHASE_TYPE_SINGLE
+
+    if any(marker in model_str for marker in _THREE_PHASE_MODEL_MARKERS):
+        return PHASE_TYPE_THREE
+
+    if "KTL" in model_str:
+        return PHASE_TYPE_THREE
+
+    return PHASE_TYPE_UNKNOWN
+
 
 def safe_int(val, default=0):
     try:
@@ -80,7 +127,8 @@ class ModbusDataCollector2000Delux:
     def set_phase_type(self, phase_type: Optional[str]):
         """Adjust per-phase calculations based on inverter topology."""
         self._phase_type = phase_type
-        if phase_type and str(phase_type).lower().startswith("three"):
+        normalized_phase_type = normalize_phase_type(phase_type)
+        if normalized_phase_type == PHASE_TYPE_THREE:
             self._phase_divisor = 3
         else:
             self._phase_divisor = 1
@@ -267,7 +315,7 @@ class ModbusDataCollector2000Delux:
 
         return data
 
-    def getStaticData(self):
+    def getStaticData(self, phase_type_override=None):
         """
         Collects static information from the inverter using Modbus TCP.
         Returns a dictionary with keys such as SN, ModelID, Model, FirmwareVersion,
@@ -296,11 +344,9 @@ class ModbusDataCollector2000Delux:
         data["Model"] = safe_read(
             registers.InverterEquipmentRegister.Model, "Model", formatted=True
         )
-        model_str = data["Model"].upper()
-        if "3" in model_str and "KTL" in model_str:
-            data["PhaseType"] = "Three-phase"
-        else:
-            data["PhaseType"] = "Single-phase"
+        data["PhaseType"] = infer_phase_type(
+            data["Model"], override=phase_type_override
+        )
 
         data["SN"] = safe_read(registers.InverterEquipmentRegister.SN, "SN")
         data["PN"] = safe_read(registers.InverterEquipmentRegister.PN, "PN")

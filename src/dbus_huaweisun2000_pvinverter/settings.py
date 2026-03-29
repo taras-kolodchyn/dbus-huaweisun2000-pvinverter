@@ -28,6 +28,7 @@ except ModuleNotFoundError:  # pragma: no cover - allows imports on dev systems
                 "modbus_host": os.getenv("DBUS_HUAWEISUN2000_MODBUS_HOST"),
                 "modbus_port": os.getenv("DBUS_HUAWEISUN2000_MODBUS_PORT"),
                 "modbus_unit": os.getenv("DBUS_HUAWEISUN2000_MODBUS_UNIT"),
+                "phase_type_override": os.getenv("DBUS_HUAWEISUN2000_PHASE_TYPE"),
                 "update_time_ms": os.getenv("DBUS_HUAWEISUN2000_UPDATE_TIME_MS"),
                 "power_correction_factor": os.getenv(
                     "DBUS_HUAWEISUN2000_POWER_CORRECTION"
@@ -94,6 +95,13 @@ class HuaweiSUN2000Settings(object):
                 0,
                 0,
                 247,
+                0,
+            ],
+            "phase_type_override": [
+                "/Settings/HuaweiSUN2000/PhaseTypeOverride",
+                "Auto",
+                "",
+                "",
                 0,
             ],
             "custom_name": [

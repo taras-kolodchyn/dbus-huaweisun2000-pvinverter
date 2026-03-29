@@ -175,6 +175,9 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
 - **Modbus override (dev mode)** — set `DBUS_HUAWEISUN2000_MODBUS_HOST`,
   `DBUS_HUAWEISUN2000_MODBUS_PORT`, or `DBUS_HUAWEISUN2000_MODBUS_UNIT` to point the
   driver at a simulator such as the Docker Compose stack described below.
+- **Phase type override** — if your inverter model naming is unusual, set
+  `DBUS_HUAWEISUN2000_PHASE_TYPE` to `single-phase` or `three-phase` to override auto
+  detection.
 
 ---
 
