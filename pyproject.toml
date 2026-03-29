@@ -7,7 +7,7 @@ name = "dbus-huaweisun2000-pvinverter"
 dynamic = ["version"]
 description = "D-Bus driver for Huawei SUN2000 integration with Victron Venus OS"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 authors = [{name = "Taras Kolodchyn"}]
 license = {file = "LICENSE"}
 dependencies = [

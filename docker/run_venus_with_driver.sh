@@ -95,6 +95,17 @@ export_build_version() {
   fi
 }
 
+pip_install_flags=()
+if ! python3 - <<'PY'
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+then
+  echo "WARNING: venus-docker still exposes $(python3 --version 2>&1); bypassing requires-python for the integration harness" >&2
+  pip_install_flags+=(--ignore-requires-python)
+fi
+
 prepare_install_layout() {
   mkdir -p /opt/victronenergy/gui/qml
   if [ ! -f "$qml_settings_file" ]; then
@@ -176,7 +187,7 @@ else:
 PY
 
 export_build_version
-python3 -m pip install -e "$WORKSPACE_ROOT"
+python3 -m pip install "${pip_install_flags[@]}" -e "$WORKSPACE_ROOT"
 
 installed_version=$(python3 - <<'PY'
 from importlib.metadata import version

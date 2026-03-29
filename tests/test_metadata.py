@@ -20,6 +20,7 @@ def test_pyproject_uses_setuptools_scm_for_versioning():
     pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
     pyproject = tomllib.loads(pyproject_path.read_text())
 
+    assert pyproject["project"]["requires-python"] == ">=3.12"
     assert "version" not in pyproject["project"]
     assert pyproject["project"]["dynamic"] == ["version"]
     assert "setuptools-scm>=8" in pyproject["build-system"]["requires"]
@@ -34,6 +35,8 @@ def test_readme_release_download_matches_workflow_asset_name():
     latest_download = "releases/latest/download/dbus-huaweisun2000-pvinverter.zip"
     assert latest_download in readme
     assert "dbus-huaweisun2000-pvinverter.zip" in workflow
+    assert "python-3.12-blue.svg" in readme
+    assert "python-version: '3.12'" in workflow
 
 
 def test_venus_docker_harness_exports_version_for_editable_installs():
@@ -41,4 +44,5 @@ def test_venus_docker_harness_exports_version_for_editable_installs():
     harness = (repo_root / "docker" / "run_venus_with_driver.sh").read_text()
 
     assert "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DBUS_HUAWEISUN2000_PVINVERTER" in harness
+    assert "--ignore-requires-python" in harness
     assert 'test "$installed_version" != "0+unknown"' in harness

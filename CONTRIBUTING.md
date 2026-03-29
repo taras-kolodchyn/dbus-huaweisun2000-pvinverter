@@ -8,8 +8,8 @@ things smooth.
 
 1. Install the development dependencies:
    ```bash
-   python -m pip install --upgrade pip
-   pip install '.[dev]'
+   python3.12 -m pip install --upgrade pip
+   python3.12 -m pip install '.[dev]'
    ```
 2. Run the linters and unit tests before opening a pull request:
    ```bash
@@ -28,7 +28,7 @@ things smooth.
 - Keep Python code formatted with `black` and follow the existing logging style
   (log via the module logger, avoid bare `print`).
 - Avoid breaking backward compatibility with the Venus OS environment—changes
-  should continue to work on Python 3.8+ with limited system libraries.
+  should target the current Python 3.12 runtime on supported Venus OS releases.
 - When adding configuration knobs, expose them via D-Bus or environment
   variables rather than hard-coding.
 - Add or update tests whenever you touch behaviour that can be verified without

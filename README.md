@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/taras-kolodchyn/dbus-huaweisun2000-pvinverter)](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases)
 ![Platform](https://img.shields.io/badge/platform-Venus%20OS%20(Cerbo%20GX)-informational)
-[![Python Version](https://img.shields.io/badge/python-3.12.9-blue.svg)](https://www.python.org/downloads/release/python-3129/)
+[![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 [![Build Status](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/actions/workflows/python-ci.yml/badge.svg?branch=main)](https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/actions/workflows/python-ci.yml)
 ![Last Commit](https://img.shields.io/github/last-commit/taras-kolodchyn/dbus-huaweisun2000-pvinverter)
 ![Commit Activity](https://img.shields.io/github/commit-activity/m/taras-kolodchyn/dbus-huaweisun2000-pvinverter)
@@ -39,7 +39,7 @@ Get detailed monitoring, energy analytics, and remote diagnostics — all in one
 - **Victron Cerbo GX** or compatible device with Venus OS (**v3.60 – v3.71** verified)
 - **Huawei SUN2000 inverter** (any recent model)
 - **Inverter WiFi or LAN access** (Modbus TCP port 502 open)
-- **Python 3.x** (pre-installed on Venus OS)
+- **Python 3.12** runtime on current Venus OS releases
 
 > ⚠️ **Venus OS firmware below v3.60 is not supported!**
 
@@ -196,8 +196,8 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
 
 1. Install tooling and dependencies:
    ```bash
-   python -m pip install --upgrade pip
-   pip install '.[dev]'
+   python3.12 -m pip install --upgrade pip
+   python3.12 -m pip install '.[dev]'
    ```
 2. Run quality checks locally:
    ```bash
