@@ -17,6 +17,7 @@ import os
 import platform
 import sys
 import time
+from collections import deque
 from typing import Dict, Optional
 
 from gi.repository import GLib
@@ -136,6 +137,9 @@ class DbusSun2000Service:
         self._idle_cycle_count = 0
         self._polling_mode = "active"
         self._last_update: Optional[float] = None
+        self._successful_update_count = 0
+        self._failed_update_count = 0
+        self._latency_samples = deque(maxlen=10)
 
         logging.debug(
             "%s /DeviceInstance = %d" % (servicename, settings.get_vrm_instance())
@@ -171,6 +175,12 @@ class DbusSun2000Service:
 
         # Create the mandatory objects
         self._dbusservice.add_path("/Latency", None)
+        self._dbusservice.add_path("/Diagnostics/PollingMode", self._polling_mode)
+        self._dbusservice.add_path("/Diagnostics/SuccessCount", 0)
+        self._dbusservice.add_path("/Diagnostics/FailureCount", 0)
+        self._dbusservice.add_path("/Diagnostics/ConsecutiveFailures", 0)
+        self._dbusservice.add_path("/Diagnostics/LatencyAverage", None)
+        self._dbusservice.add_path("/Diagnostics/LastUpdateTimestamp", None)
         self._dbusservice.add_path("/Role", "pvinverter")
         self._dbusservice.add_path(
             "/Position",
@@ -253,6 +263,20 @@ class DbusSun2000Service:
         self._set_polling_mode("active", self._update_interval_ms)
         return self._update_interval_ms
 
+    def _update_diagnostics(self, service_paths):
+        service_paths["/Diagnostics/PollingMode"] = self._polling_mode
+        service_paths["/Diagnostics/SuccessCount"] = self._successful_update_count
+        service_paths["/Diagnostics/FailureCount"] = self._failed_update_count
+        service_paths["/Diagnostics/ConsecutiveFailures"] = self._failure_count
+        service_paths["/Diagnostics/LastUpdateTimestamp"] = self._last_update
+        if self._latency_samples:
+            service_paths["/Diagnostics/LatencyAverage"] = round(
+                sum(self._latency_samples) / len(self._latency_samples),
+                1,
+            )
+        else:
+            service_paths["/Diagnostics/LatencyAverage"] = None
+
     def _update(self):
         start = time.monotonic()
         next_delay_ms = self._update_interval_ms
@@ -278,6 +302,8 @@ class DbusSun2000Service:
                 # update lastupdate vars
                 self._last_update = time.time()
                 latency_ms = round((time.monotonic() - start) * 1000, 1)
+                self._latency_samples.append(latency_ms)
+                self._successful_update_count += 1
                 s["/Latency"] = latency_ms
                 s["/Connected"] = 1
                 status_message = meter_data.get("status_message")
@@ -311,15 +337,18 @@ class DbusSun2000Service:
 
                 self._failure_count = 0
                 next_delay_ms = self._resolve_next_delay_ms(meter_data)
+                self._update_diagnostics(s)
 
             except Exception as e:
                 self._failure_count += 1
+                self._failed_update_count += 1
                 self._idle_cycle_count = 0
                 next_delay_ms = self._resolve_offline_delay_ms()
                 self._set_polling_mode("offline", next_delay_ms)
                 backoff_seconds = next_delay_ms / 1000.0
                 s["/Connected"] = 0
                 s["/Status"] = f"Update failed: {e}"[:80]
+                self._update_diagnostics(s)
                 LOG.warning(
                     "Update failed for %s (failure #%d, retry in %.1fs): %s",
                     self._service_name,

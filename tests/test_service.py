@@ -305,6 +305,18 @@ def test_basic_required_paths_and_defaults():
     assert p["/UpdateIndex"] == 0
 
 
+def test_diagnostics_paths_exist_with_initial_defaults():
+    svc, _ = build_service()
+    p = svc._dbusservice.paths
+
+    assert p["/Diagnostics/PollingMode"] == "active"
+    assert p["/Diagnostics/SuccessCount"] == 0
+    assert p["/Diagnostics/FailureCount"] == 0
+    assert p["/Diagnostics/ConsecutiveFailures"] == 0
+    assert p["/Diagnostics/LatencyAverage"] is None
+    assert p["/Diagnostics/LastUpdateTimestamp"] is None
+
+
 def test_product_id_uses_model_id_when_available():
     svc, _ = build_service(model_id=444.0)
     p = svc._dbusservice.paths
@@ -363,6 +375,21 @@ def test_update_writes_and_increments_index():
     assert p["/Ac/Current"] == 5
     assert p["/UpdateIndex"] == (old + 1) % 256
     assert conn.calls >= 1
+
+
+def test_update_success_populates_diagnostics():
+    svc, _ = build_service()
+    p = svc._dbusservice.paths
+
+    assert svc._update() is False
+
+    assert p["/Diagnostics/PollingMode"] == "active"
+    assert p["/Diagnostics/SuccessCount"] == 1
+    assert p["/Diagnostics/FailureCount"] == 0
+    assert p["/Diagnostics/ConsecutiveFailures"] == 0
+    assert isinstance(p["/Diagnostics/LatencyAverage"], (int, float))
+    assert isinstance(p["/Diagnostics/LastUpdateTimestamp"], float)
+    assert p["/Diagnostics/LatencyAverage"] == p["/Latency"]
 
 
 def test_multiple_updates_wrap_beyond_255():
@@ -564,6 +591,32 @@ def test_update_failure_reschedules_with_exponential_backoff():
     assert svc._polling_mode == "offline"
 
 
+def test_update_failure_populates_diagnostics():
+    class RaisingConnector:
+        def getData(self):
+            raise RuntimeError("boom")
+
+    settings = FakeSettingsForService()
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={"/Ac/Power": {"initial": 0, "textformat": m._format_w}},
+        data_connector=RaisingConnector(),
+        service_factory=FakeService,
+        timeout_add=lambda ms, func: True,
+    )
+
+    p = svc._dbusservice.paths
+    assert svc._update() is False
+
+    assert p["/Diagnostics/PollingMode"] == "offline"
+    assert p["/Diagnostics/SuccessCount"] == 0
+    assert p["/Diagnostics/FailureCount"] == 1
+    assert p["/Diagnostics/ConsecutiveFailures"] == 1
+    assert p["/Diagnostics/LatencyAverage"] is None
+    assert p["/Diagnostics/LastUpdateTimestamp"] is None
+
+
 def test_update_success_recovers_from_offline_polling():
     class FlakyConnector:
         def __init__(self):
@@ -597,6 +650,27 @@ def test_update_success_recovers_from_offline_polling():
     assert svc._polling_mode == "active"
     assert svc._failure_count == 0
     assert spy.calls[-1] == (1000, svc._update)
+
+
+def test_update_diagnostics_tracks_rolling_latency_average():
+    svc, _ = build_service()
+    p = svc._dbusservice.paths
+
+    svc._latency_samples.extend([100.0, 200.0, 300.0])
+    svc._successful_update_count = 3
+    svc._failed_update_count = 1
+    svc._failure_count = 1
+    svc._polling_mode = "offline"
+    svc._last_update = 123.0
+
+    svc._update_diagnostics(p)
+
+    assert p["/Diagnostics/PollingMode"] == "offline"
+    assert p["/Diagnostics/SuccessCount"] == 3
+    assert p["/Diagnostics/FailureCount"] == 1
+    assert p["/Diagnostics/ConsecutiveFailures"] == 1
+    assert p["/Diagnostics/LatencyAverage"] == 200.0
+    assert p["/Diagnostics/LastUpdateTimestamp"] == 123.0
 
 
 def test_update_enters_idle_polling_after_consecutive_low_power_samples():
