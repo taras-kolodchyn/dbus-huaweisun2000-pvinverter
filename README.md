@@ -109,6 +109,7 @@ This project now targets **GUI-v2 only**.
   ```bash
   sh /data/dbus-huaweisun2000-pvinverter/configure.sh --host 192.168.211.50 --port 502 --unit 3
   sh /data/dbus-huaweisun2000-pvinverter/configure.sh --position 2 --custom-name "Huawei SUN2000"
+  sh /data/dbus-huaweisun2000-pvinverter/configure.sh --vrm-instance 20
   sh /data/dbus-huaweisun2000-pvinverter/configure.sh --show
   ```
 - The script writes settings under `com.victronenergy.settings`, so changes survive restarts.

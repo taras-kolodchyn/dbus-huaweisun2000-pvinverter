@@ -10,10 +10,12 @@ Usage:
   configure.sh [--host HOST] [--port PORT] [--unit UNIT] [--position POSITION]
                [--custom-name NAME] [--phase-type {auto,single-phase,three-phase}]
                [--update-ms MS] [--power-correction FACTOR]
+               [--vrm-instance INSTANCE]
 
 Examples:
   sh configure.sh --host 192.168.211.50 --port 502 --unit 3
   sh configure.sh --position 2 --custom-name "Huawei SUN2000"
+  sh configure.sh --vrm-instance 20
   sh configure.sh --show
 EOF
 }
@@ -35,6 +37,8 @@ show_settings() {
     printf 'Position: %s\n' "$(dbus_get /Settings/HuaweiSUN2000/Position)"
     printf 'Update time (ms): %s\n' "$(dbus_get /Settings/HuaweiSUN2000/UpdateTimeMS)"
     printf 'Power correction factor: %s\n' "$(dbus_get /Settings/HuaweiSUN2000/PowerCorrectionFactor)"
+    printf 'VRM instance: %s\n' \
+        "$(dbus_get /Settings/Devices/HuaweiSUN2000/ClassAndVrmInstance)"
 }
 
 if ! command -v dbus >/dev/null 2>&1; then
@@ -103,6 +107,17 @@ while [ $# -gt 0 ]; do
             ;;
         --power-correction)
             dbus_set /Settings/HuaweiSUN2000/PowerCorrectionFactor "$2"
+            show_after_update=1
+            shift 2
+            ;;
+        --vrm-instance)
+            case "$2" in
+                ''|*[!0-9]*)
+                    echo "ERROR: --vrm-instance must be a non-negative integer" >&2
+                    exit 1
+                    ;;
+            esac
+            dbus_set /Settings/Devices/HuaweiSUN2000/ClassAndVrmInstance "pvinverter:$2"
             show_after_update=1
             shift 2
             ;;

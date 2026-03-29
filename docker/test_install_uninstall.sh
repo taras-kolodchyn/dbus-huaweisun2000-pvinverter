@@ -36,6 +36,7 @@ case "$4" in
       /Settings/HuaweiSUN2000/Position) echo "2" ;;
       /Settings/HuaweiSUN2000/UpdateTimeMS) echo "1000" ;;
       /Settings/HuaweiSUN2000/PowerCorrectionFactor) echo "1.0" ;;
+      /Settings/Devices/HuaweiSUN2000/ClassAndVrmInstance) echo "'pvinverter:20'" ;;
       *) echo "0" ;;
     esac
     ;;
@@ -74,7 +75,7 @@ cp /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml 
 printf "patched\n" >/opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
 printf "patched\n" >/opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 
-bash configure.sh --host 192.0.2.10 --port 1502 --unit 3 --position 2 --custom-name "Huawei Test" --phase-type three-phase --update-ms 1000 --power-correction 1.0 >/tmp/configure.log
+bash configure.sh --host 192.0.2.10 --port 1502 --unit 3 --position 2 --custom-name "Huawei Test" --phase-type three-phase --update-ms 1000 --power-correction 1.0 --vrm-instance 20 >/tmp/configure.log
 grep -q "/Settings/HuaweiSUN2000/ModbusHost SetValue 192.0.2.10" /tmp/dbus.log
 grep -q "/Settings/HuaweiSUN2000/ModbusPort SetValue 1502" /tmp/dbus.log
 grep -q "/Settings/HuaweiSUN2000/ModbusUnit SetValue 3" /tmp/dbus.log
@@ -83,6 +84,7 @@ grep -q "/Settings/HuaweiSUN2000/CustomName SetValue Huawei Test" /tmp/dbus.log
 grep -q "/Settings/HuaweiSUN2000/PhaseTypeOverride SetValue three-phase" /tmp/dbus.log
 grep -q "/Settings/HuaweiSUN2000/UpdateTimeMS SetValue 1000" /tmp/dbus.log
 grep -q "/Settings/HuaweiSUN2000/PowerCorrectionFactor SetValue 1.0" /tmp/dbus.log
+grep -q "/Settings/Devices/HuaweiSUN2000/ClassAndVrmInstance SetValue pvinverter:20" /tmp/dbus.log
 
 bash install.sh
 
