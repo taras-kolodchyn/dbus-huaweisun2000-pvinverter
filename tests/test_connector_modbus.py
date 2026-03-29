@@ -93,6 +93,8 @@ class FakeSun2000:
 def build_values():
     return {
         registers.InverterEquipmentRegister.ActivePower: 9000,
+        registers.InverterEquipmentRegister.PV1Voltage: 500.0,
+        registers.InverterEquipmentRegister.PV1Current: 19.0,
         registers.InverterEquipmentRegister.PhaseACurrent: 10,
         registers.InverterEquipmentRegister.PhaseAVoltage: 230,
         registers.InverterEquipmentRegister.PhaseBCurrent: 10,
@@ -107,6 +109,72 @@ def build_values():
         registers.InverterEquipmentRegister.GridFrequency: 50.0,
         registers.InverterEquipmentRegister.PowerFactor: 0.95,
     }
+
+
+def _build_main_range_payload(values):
+    return _build_range_payload(
+        cm._MAIN_DATA_RANGE["start"],
+        cm._MAIN_DATA_RANGE["end"],
+        {
+            registers.InverterEquipmentRegister.InputPower: values[
+                registers.InverterEquipmentRegister.InputPower
+            ],
+            registers.InverterEquipmentRegister.PhaseAVoltage: values[
+                registers.InverterEquipmentRegister.PhaseAVoltage
+            ],
+            registers.InverterEquipmentRegister.PhaseBVoltage: values[
+                registers.InverterEquipmentRegister.PhaseBVoltage
+            ],
+            registers.InverterEquipmentRegister.PhaseCVoltage: values[
+                registers.InverterEquipmentRegister.PhaseCVoltage
+            ],
+            registers.InverterEquipmentRegister.PhaseACurrent: values[
+                registers.InverterEquipmentRegister.PhaseACurrent
+            ],
+            registers.InverterEquipmentRegister.PhaseBCurrent: values[
+                registers.InverterEquipmentRegister.PhaseBCurrent
+            ],
+            registers.InverterEquipmentRegister.PhaseCCurrent: values[
+                registers.InverterEquipmentRegister.PhaseCCurrent
+            ],
+            registers.InverterEquipmentRegister.ActivePower: values[
+                registers.InverterEquipmentRegister.ActivePower
+            ],
+            registers.InverterEquipmentRegister.PowerFactor: values[
+                registers.InverterEquipmentRegister.PowerFactor
+            ],
+            registers.InverterEquipmentRegister.GridFrequency: values[
+                registers.InverterEquipmentRegister.GridFrequency
+            ],
+        },
+    )
+
+
+def _build_pv_input_range_payload(values):
+    payload_values = {}
+    for (
+        _voltage_key,
+        _current_key,
+        voltage_register,
+        current_register,
+    ) in cm._PV_STRING_SPECS:
+        if voltage_register in values:
+            payload_values[voltage_register] = values[voltage_register]
+        if current_register in values:
+            payload_values[current_register] = values[current_register]
+
+    return _build_range_payload(
+        cm._PV_INPUT_DATA_RANGE["start"],
+        cm._PV_INPUT_DATA_RANGE["end"],
+        payload_values,
+    )
+
+
+MAIN_RANGE_KEY = (cm._MAIN_DATA_RANGE["start"], cm._MAIN_DATA_RANGE["end"])
+PV_INPUT_RANGE_KEY = (
+    cm._PV_INPUT_DATA_RANGE["start"],
+    cm._PV_INPUT_DATA_RANGE["end"],
+)
 
 
 def _factory_with_values(values):
@@ -189,6 +257,49 @@ def test_connector_handles_unexpected_register_missing():
     assert data["/Ac/Energy/Today"] == round(9.0 * 1000.0, 1)
     assert data["/Ac/Voltage"] == 230.0
     assert data["/Ac/Current"] == 1.0
+
+
+def test_connector_derives_pv_metrics_from_weighted_string_inputs():
+    values = build_values()
+    values[registers.InverterEquipmentRegister.InputPower] = 4060.0
+    values[registers.InverterEquipmentRegister.PV1Voltage] = 500.0
+    values[registers.InverterEquipmentRegister.PV1Current] = 5.0
+    values[registers.InverterEquipmentRegister.PV2Voltage] = 520.0
+    values[registers.InverterEquipmentRegister.PV2Current] = 3.0
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=_factory_with_values(values)
+    )
+    collector.set_phase_type("Three-phase")
+
+    data = collector.getData()
+
+    assert data["/Pv/V"] == 507.5
+    assert data["/Pv/I"] == 8.0
+    assert data["/Yield/Power"] == 4060.0
+    assert data["/Dc/0/Voltage"] == 507.5
+    assert data["/Dc/0/Current"] == 8.0
+
+
+def test_connector_derives_pv_current_from_power_when_string_currents_are_zero():
+    values = build_values()
+    values[registers.InverterEquipmentRegister.InputPower] = 1050.0
+    values[registers.InverterEquipmentRegister.PV1Voltage] = 510.0
+    values[registers.InverterEquipmentRegister.PV1Current] = 0.0
+    values[registers.InverterEquipmentRegister.PV2Voltage] = 540.0
+    values[registers.InverterEquipmentRegister.PV2Current] = 0.0
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=_factory_with_values(values)
+    )
+    collector.set_phase_type("Single-phase")
+
+    data = collector.getData()
+
+    assert data["/Pv/V"] == 525.0
+    assert data["/Pv/I"] == 2.0
+    assert data["/Dc/0/Voltage"] == 525.0
+    assert data["/Dc/0/Current"] == 2.0
 
 
 def test_daily_energy_falls_back_to_legacy_register():
@@ -304,42 +415,8 @@ def test_get_static_data_uses_typed_fallbacks_for_missing_fields(caplog):
 def test_get_data_prefers_batch_reads_for_contiguous_registers():
     values = build_values()
     batch_payloads = {
-        (32064, 32085): _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -404,9 +481,13 @@ def test_get_data_prefers_batch_reads_for_contiguous_registers():
     assert data["/Ac/Energy/Forward"] == 123.45
     assert data["/Ac/Energy/Today"] == 12340.0
     assert data["/Ac/L1/Frequency"] == 50.0
+    assert data["/Pv/V"] == 500.0
+    assert data["/Pv/I"] == 19.0
+    assert data["/Yield/Power"] == 9500.0
     assert holder["instance"].read_calls == []
     assert holder["instance"].read_range_calls == [
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
@@ -448,42 +529,8 @@ def test_get_data_falls_back_to_single_reads_when_batching_unavailable():
 def test_get_data_disables_unsupported_optional_daily_realtime_range(caplog):
     values = build_values()
     batch_payloads = {
-        (32064, 32085): _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -560,42 +607,8 @@ def test_get_data_disables_unsupported_optional_daily_realtime_range(caplog):
 def test_get_data_reuses_cached_auxiliary_ranges_between_refresh_windows():
     values = build_values()
     batch_payloads = {
-        (32064, 32085): _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -661,54 +674,120 @@ def test_get_data_reuses_cached_auxiliary_ranges_between_refresh_windows():
     assert first["/Ac/Energy/Today"] == 12340.0
     assert second["/Ac/Energy/Today"] == 12340.0
     assert holder["instance"].read_range_calls == [
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
     ]
+
+
+def test_get_data_reuses_cached_pv_input_values_after_transient_range_failure():
+    values = build_values()
+    batch_payloads = {
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        (30075, 30076): _build_range_payload(
+            30075,
+            30076,
+            {
+                registers.InverterEquipmentRegister.MaximumActivePower: values[
+                    registers.InverterEquipmentRegister.MaximumActivePower
+                ],
+            },
+        ),
+        (32106, 32107): _build_range_payload(
+            32106,
+            32107,
+            {
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield: values[
+                    registers.InverterEquipmentRegister.AccumulatedEnergyYield
+                ],
+            },
+        ),
+        (32114, 32115): _build_range_payload(
+            32114,
+            32115,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYield: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYield
+                ],
+            },
+        ),
+        (40562, 40563): _build_range_payload(
+            40562,
+            40563,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+                ],
+            },
+        ),
+    }
+
+    class FlakyPvRangeSun2000(FakeSun2000):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self._pv_reads = 0
+
+        def read_range(
+            self,
+            start_address,
+            quantity=0,
+            end_address=0,
+            retries=None,
+            retry_delay=None,
+            **_kwargs,
+        ):
+            end = end_address if end_address else start_address + quantity - 1
+            self.read_range_calls.append((start_address, end, retries, retry_delay))
+            if (start_address, end) == PV_INPUT_RANGE_KEY:
+                self._pv_reads += 1
+                if self._pv_reads > 1:
+                    raise RuntimeError("temporary PV read failure")
+            return batch_payloads[(start_address, end)]
+
+    holder = {}
+    now = {"value": 0.0}
+
+    def factory(**_kwargs):
+        holder["instance"] = FlakyPvRangeSun2000(values=values)
+        return holder["instance"]
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=factory,
+        power_correction_factor=1.0,
+        time_fn=lambda: now["value"],
+    )
+    collector.set_phase_type("Single-phase")
+
+    first = collector.getData()
+    now["value"] = 1.0
+    second = collector.getData()
+
+    assert first["/Pv/V"] == 500.0
+    assert first["/Pv/I"] == 19.0
+    assert second["/Pv/V"] == 500.0
+    assert second["/Pv/I"] == 19.0
+    assert holder["instance"].read_range_calls[:2] == [
+        (*MAIN_RANGE_KEY, None, None),
+        (*PV_INPUT_RANGE_KEY, None, None),
+    ]
+    assert holder["instance"].read_range_calls[2:4] == [
+        (30075, 30076, None, None),
+        (32106, 32107, None, None),
+    ]
+    assert (*PV_INPUT_RANGE_KEY, 1, 0) in holder["instance"].read_range_calls
 
 
 def test_get_data_refreshes_cached_energy_ranges_after_interval():
     values = build_values()
     batch_payloads = {
-        (32064, 32085): _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -772,12 +851,14 @@ def test_get_data_refreshes_cached_energy_ranges_after_interval():
     collector.getData()
 
     assert holder["instance"].read_range_calls == [
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
@@ -787,42 +868,8 @@ def test_get_data_refreshes_cached_energy_ranges_after_interval():
 def test_cached_auxiliary_refresh_uses_single_attempt_transport_policy():
     values = build_values()
     batch_payloads = {
-        (32064, 32085): _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -898,12 +945,14 @@ def test_cached_auxiliary_refresh_uses_single_attempt_transport_policy():
     collector.getData()
 
     assert holder["instance"].read_range_calls == [
-        (32064, 32085, None, None),
+        (*MAIN_RANGE_KEY, None, None),
+        (*PV_INPUT_RANGE_KEY, None, None),
         (30075, 30076, None, None),
         (32106, 32107, None, None),
         (32114, 32115, None, None),
         (40562, 40563, None, None),
-        (32064, 32085, None, None),
+        (*MAIN_RANGE_KEY, None, None),
+        (*PV_INPUT_RANGE_KEY, 1, 0),
         (32106, 32107, 1, 0),
         (32114, 32115, 1, 0),
         (40562, 40563, 1, 0),
@@ -928,6 +977,7 @@ def test_get_data_refreshes_main_power_range_every_cycle():
     second_values[registers.InverterEquipmentRegister.InputPower] = 1300.0
 
     auxiliary_payloads = {
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(first_values),
         (30075, 30076): _build_range_payload(
             30075,
             30076,
@@ -967,78 +1017,8 @@ def test_get_data_refreshes_main_power_range_every_cycle():
     }
 
     main_payloads = [
-        _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: first_values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: first_values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: first_values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: first_values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: first_values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: first_values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: first_values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: first_values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: first_values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: first_values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
-        _build_range_payload(
-            32064,
-            32085,
-            {
-                registers.InverterEquipmentRegister.InputPower: second_values[
-                    registers.InverterEquipmentRegister.InputPower
-                ],
-                registers.InverterEquipmentRegister.PhaseAVoltage: second_values[
-                    registers.InverterEquipmentRegister.PhaseAVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseBVoltage: second_values[
-                    registers.InverterEquipmentRegister.PhaseBVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseCVoltage: second_values[
-                    registers.InverterEquipmentRegister.PhaseCVoltage
-                ],
-                registers.InverterEquipmentRegister.PhaseACurrent: second_values[
-                    registers.InverterEquipmentRegister.PhaseACurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseBCurrent: second_values[
-                    registers.InverterEquipmentRegister.PhaseBCurrent
-                ],
-                registers.InverterEquipmentRegister.PhaseCCurrent: second_values[
-                    registers.InverterEquipmentRegister.PhaseCCurrent
-                ],
-                registers.InverterEquipmentRegister.ActivePower: second_values[
-                    registers.InverterEquipmentRegister.ActivePower
-                ],
-                registers.InverterEquipmentRegister.PowerFactor: second_values[
-                    registers.InverterEquipmentRegister.PowerFactor
-                ],
-                registers.InverterEquipmentRegister.GridFrequency: second_values[
-                    registers.InverterEquipmentRegister.GridFrequency
-                ],
-            },
-        ),
+        _build_main_range_payload(first_values),
+        _build_main_range_payload(second_values),
     ]
 
     class DynamicMainRangeSun2000(FakeSun2000):
@@ -1049,7 +1029,7 @@ def test_get_data_refreshes_main_power_range_every_cycle():
         def read_range(self, start_address, quantity=0, end_address=0, **_kwargs):
             end = end_address if end_address else start_address + quantity - 1
             self.read_range_calls.append((start_address, end))
-            if (start_address, end) == (32064, 32085):
+            if (start_address, end) == MAIN_RANGE_KEY:
                 payload = main_payloads[min(self._main_reads, len(main_payloads) - 1)]
                 self._main_reads += 1
                 return payload
@@ -1078,10 +1058,12 @@ def test_get_data_refreshes_main_power_range_every_cycle():
     assert second["/Ac/Power"] == 1200.0
     assert second["/Dc/Power"] == 1300.0
     assert holder["instance"].read_range_calls == [
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
         (30075, 30076),
         (32106, 32107),
         (32114, 32115),
         (40562, 40563),
-        (32064, 32085),
+        MAIN_RANGE_KEY,
+        PV_INPUT_RANGE_KEY,
     ]

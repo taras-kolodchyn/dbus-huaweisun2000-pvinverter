@@ -19,6 +19,27 @@ PHASE_TYPE_UNKNOWN = "Unknown"
 
 _SINGLE_PHASE_MODEL_MARKERS = ("-L1",)
 _THREE_PHASE_MODEL_MARKERS = ("-M0", "-M1", "-M2", "-M3", "-M5", "-MB0", "-MAP0")
+
+
+def _build_pv_string_specs():
+    specs = []
+    range_registers = {}
+    for index in range(1, 25):
+        voltage_register = getattr(
+            registers.InverterEquipmentRegister, f"PV{index}Voltage"
+        )
+        current_register = getattr(
+            registers.InverterEquipmentRegister, f"PV{index}Current"
+        )
+        voltage_key = f"_pv{index}_voltage"
+        current_key = f"_pv{index}_current"
+        range_registers[voltage_key] = voltage_register
+        range_registers[current_key] = current_register
+        specs.append((voltage_key, current_key, voltage_register, current_register))
+    return tuple(specs), range_registers
+
+
+_PV_STRING_SPECS, _PV_RANGE_REGISTERS = _build_pv_string_specs()
 _MAIN_DATA_RANGE = {
     "start": 32064,
     "end": 32085,
@@ -34,6 +55,13 @@ _MAIN_DATA_RANGE = {
         "_power_factor": registers.InverterEquipmentRegister.PowerFactor,
         "_grid_frequency": registers.InverterEquipmentRegister.GridFrequency,
     },
+}
+_PV_INPUT_DATA_RANGE = {
+    "start": 32016,
+    "end": 32063,
+    "optional_key": "_pv_inputs",
+    "refresh_interval_s": 0.0,
+    "registers": _PV_RANGE_REGISTERS,
 }
 _AUXILIARY_DATA_RANGES = (
     {
@@ -389,6 +417,87 @@ class ModbusDataCollector2000Delux:
             return None, last_error
         return round(daily_yield_kwh * 1000.0, 1), last_error
 
+    def _iter_pv_string_measurements(self, batch_values):
+        if _PV_INPUT_DATA_RANGE["optional_key"] in self._disabled_optional_keys:
+            return []
+
+        measurements = []
+        for (
+            voltage_key,
+            current_key,
+            voltage_register,
+            current_register,
+        ) in _PV_STRING_SPECS:
+            try:
+                voltage = safe_float(
+                    self._read_register_value(
+                        voltage_key,
+                        voltage_register,
+                        batch_values,
+                    ),
+                    None,
+                )
+            except Exception:
+                voltage = None
+
+            try:
+                current = safe_float(
+                    self._read_register_value(
+                        current_key,
+                        current_register,
+                        batch_values,
+                    ),
+                    None,
+                )
+            except Exception:
+                current = None
+
+            if voltage is None and current is None:
+                continue
+            measurements.append((voltage, current))
+
+        return measurements
+
+    def _derive_pv_metrics(self, data, batch_values):
+        pv_voltage_sum = 0.0
+        pv_current_sum = 0.0
+        positive_voltages = []
+
+        for voltage, current in self._iter_pv_string_measurements(batch_values):
+            if voltage is not None and voltage > 0:
+                positive_voltages.append(voltage)
+            if (
+                voltage is not None
+                and voltage > 0
+                and current is not None
+                and current > 0
+            ):
+                pv_voltage_sum += voltage * current
+                pv_current_sum += current
+
+        pv_voltage = None
+        if pv_current_sum > 0:
+            pv_voltage = round(pv_voltage_sum / pv_current_sum, 1)
+        elif positive_voltages:
+            pv_voltage = round(sum(positive_voltages) / len(positive_voltages), 1)
+
+        dc_power = safe_float(data.get("/Dc/Power"), None)
+        if pv_voltage not in (None, 0):
+            if dc_power is not None:
+                pv_current = round(dc_power / pv_voltage, 1)
+            elif pv_current_sum > 0:
+                pv_current = round(pv_current_sum, 1)
+            else:
+                pv_current = None
+        else:
+            pv_current = None
+
+        data["/Pv/V"] = pv_voltage
+        data["/Pv/I"] = pv_current
+        data["/Yield/Power"] = dc_power
+        data["/Dc/0/Voltage"] = pv_voltage
+        data["/Dc/0/Current"] = pv_current
+
     def getData(self):
         # The connect() method internally checks whether there's already a connection
         if not self.invSun2000.connect():
@@ -397,6 +506,7 @@ class ModbusDataCollector2000Delux:
 
         data = {}
         batch_values = self._read_range_group(_MAIN_DATA_RANGE)
+        batch_values.update(self._read_range_group(_PV_INPUT_DATA_RANGE))
         for group in _AUXILIARY_DATA_RANGES:
             batch_values.update(self._read_range_group(group))
 
@@ -514,6 +624,7 @@ class ModbusDataCollector2000Delux:
             * float(data["/Ac/L3/Current"])
             * self.power_correction_factor
         )
+        self._derive_pv_metrics(data, batch_values)
 
         return data
 
