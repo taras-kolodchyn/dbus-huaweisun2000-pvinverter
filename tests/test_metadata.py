@@ -34,3 +34,11 @@ def test_readme_release_download_matches_workflow_asset_name():
     latest_download = "releases/latest/download/dbus-huaweisun2000-pvinverter.zip"
     assert latest_download in readme
     assert "dbus-huaweisun2000-pvinverter.zip" in workflow
+
+
+def test_venus_docker_harness_exports_version_for_editable_installs():
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    harness = (repo_root / "docker" / "run_venus_with_driver.sh").read_text()
+
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DBUS_HUAWEISUN2000_PVINVERTER" in harness
+    assert 'test "$installed_version" != "0+unknown"' in harness

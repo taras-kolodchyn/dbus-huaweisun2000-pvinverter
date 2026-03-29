@@ -18,6 +18,83 @@ install_completed=0
 SIM_PID=
 qml_settings_file=/opt/victronenergy/gui/qml/PageSettingsFronius.qml
 
+find_git_dir() {
+  local dotgit=$1/.git
+
+  if [ -d "$dotgit" ]; then
+    printf '%s\n' "$dotgit"
+    return 0
+  fi
+
+  if [ -f "$dotgit" ]; then
+    sed -n 's/^gitdir: //p' "$dotgit"
+    return 0
+  fi
+
+  return 1
+}
+
+latest_version_tag() {
+  local repo_root=$1
+  local git_dir
+
+  git_dir=$(find_git_dir "$repo_root") || return 1
+
+  {
+    if [ -d "$git_dir/refs/tags" ]; then
+      find "$git_dir/refs/tags" -type f | sed "s#^$git_dir/refs/tags/##"
+    fi
+
+    if [ -f "$git_dir/packed-refs" ]; then
+      awk '
+        !/^#/ && !/^\^/ && $2 ~ /^refs\/tags\// {
+          sub(/^refs\/tags\//, "", $2)
+          print $2
+        }
+      ' "$git_dir/packed-refs"
+    fi
+  } | grep -E '^v[0-9]+(\.[0-9]+){2}([-.][0-9A-Za-z]+)*$' | sort -u | sort -V | tail -n1
+}
+
+normalize_git_describe() {
+  local describe_output=$1
+
+  if [[ "$describe_output" =~ ^v(.+)-([0-9]+)-g[0-9a-f]+$ ]]; then
+    printf '%s.post1.dev%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return 0
+  fi
+
+  if [[ "$describe_output" =~ ^v(.+)$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
+export_build_version() {
+  local version=
+  local latest_tag=
+
+  if [ -n "${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DBUS_HUAWEISUN2000_PVINVERTER:-}" ]; then
+    return 0
+  fi
+
+  if command -v git >/dev/null 2>&1; then
+    version=$(normalize_git_describe "$(git -C "$WORKSPACE_ROOT" describe --tags --match 'v*' 2>/dev/null || true)" || true)
+  fi
+
+  if [ -z "$version" ]; then
+    latest_tag=$(latest_version_tag "$WORKSPACE_ROOT" || true)
+    version=${latest_tag#v}
+  fi
+
+  if [ -n "$version" ]; then
+    export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DBUS_HUAWEISUN2000_PVINVERTER="$version"
+    echo "INFO: Using SCM version $version for editable install"
+  fi
+}
+
 prepare_install_layout() {
   mkdir -p /opt/victronenergy/gui/qml
   if [ ! -f "$qml_settings_file" ]; then
@@ -98,7 +175,17 @@ else:
     sys.exit("D-Bus system bus not available")
 PY
 
+export_build_version
 python3 -m pip install -e "$WORKSPACE_ROOT"
+
+installed_version=$(python3 - <<'PY'
+from importlib.metadata import version
+
+print(version("dbus-huaweisun2000-pvinverter"))
+PY
+)
+echo "INFO: Editable install resolved version $installed_version"
+test "$installed_version" != "0+unknown"
 
 if [ "$USE_INSTALL_SH" = "1" ]; then
   bash install.sh

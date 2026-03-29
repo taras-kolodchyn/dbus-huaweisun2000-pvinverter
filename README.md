@@ -235,7 +235,9 @@ The stack pulls the official Venus OS development image, installs this driver in
 mode, starts a lightweight Modbus simulator, and runs the service in "oneshot" mode against
 the simulated registers. Use `CTRL+C` (or `docker compose down --volumes --remove-orphans`)
 to stop the containers. Edit the code on your host and re-run the command – the Venus
-container reinstalls the project on every start so changes are reflected immediately.
+container reinstalls the project on every start so changes are reflected immediately. When
+the image does not have the `git` CLI available, the harness still resolves a best-effort
+package version from repository tags so editable installs do not fall back to `0+unknown`.
 
 Environment knobs:
 
