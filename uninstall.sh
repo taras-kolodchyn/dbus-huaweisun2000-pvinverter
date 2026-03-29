@@ -10,6 +10,18 @@ CUSTOM_SETTINGS_FILE="$GUI_QML_DIR/PageSettingsHuaweiSUN2000.qml"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
 BACKUP_FILE="$BACKUP_DIR/PageSettingsFronius.qml.orig"
 
+stop_supervised_service() {
+    local service_path=$1
+    if [ ! -e "$service_path" ]; then
+        return
+    fi
+
+    echo "Stopping supervised service: $service_path"
+    svc -dx "$service_path/log" 2>/dev/null || true
+    svc -dx "$service_path" 2>/dev/null || true
+    sleep 1
+}
+
 stop_matching_processes() {
     local label=$1
     local pattern=$2
@@ -33,6 +45,8 @@ stop_matching_processes() {
         esac
     done
 }
+
+stop_supervised_service "/service/$SERVICE_NAME"
 
 echo "Removing service: /service/$SERVICE_NAME"
 rm -f "/service/$SERVICE_NAME"

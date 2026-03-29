@@ -24,6 +24,7 @@ chmod +x /usr/local/bin/svc
 
 mkdir -p /service /data /opt/victronenergy/gui/qml /var/log/dbus-huaweisun2000
 touch /service/start-gui
+printf "preserve-me\n" >/var/log/dbus-huaweisun2000/lock
 
 cat >/opt/victronenergy/gui/qml/PageSettingsFronius.qml <<'"'"'EOF'"'"'
 MbPage {
@@ -44,6 +45,7 @@ grep -qxF "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
 grep -q "// dbus-huaweisun2000 start" /opt/victronenergy/gui/qml/PageSettingsFronius.qml
 test -f /opt/victronenergy/gui/qml/PageSettingsHuaweiSUN2000.qml
 test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/PageSettingsFronius.qml.orig
+grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
 grep -q -- "-t /service/start-gui" /tmp/svc.log
 
 modified_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")
@@ -55,6 +57,7 @@ bash uninstall.sh
 test ! -e /service/dbus-huaweisun2000-pvinverter
 ! grep -q "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
 test ! -f /opt/victronenergy/gui/qml/PageSettingsHuaweiSUN2000.qml
+grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
 restored_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")
 test "$restored_hash" = "$original_hash"
 grep -q -- "-t /service/start-gui" /tmp/svc.log

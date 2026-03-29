@@ -116,6 +116,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 package_stub = types.ModuleType("dbus_huaweisun2000_pvinverter")
 package_stub.__path__ = [str(SRC_DIR / "dbus_huaweisun2000_pvinverter")]
+package_stub.__version__ = "0.0"
 sys.modules.setdefault("dbus_huaweisun2000_pvinverter", package_stub)
 MODULE_PATH = SRC_DIR / "dbus_huaweisun2000_pvinverter" / "main.py"
 spec = importlib.util.spec_from_file_location(
@@ -170,11 +171,13 @@ class SpyTimeout:
         self.called = 0
         self.ms = None
         self.func = None
+        self.calls = []
 
     def add(self, ms, func):
         self.called += 1
         self.ms = ms
         self.func = func
+        self.calls.append((ms, func))
         return True
 
 
@@ -250,6 +253,31 @@ def test_basic_required_paths_and_defaults():
     assert p["/UpdateIndex"] == 0
 
 
+def test_runtime_noise_filter_drops_noisy_root_messages():
+    filt = m._RuntimeNoiseFilter()
+    dropped = logging.LogRecord(
+        name="root",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="set /Ac/Power to 100",
+        args=(),
+        exc_info=None,
+    )
+    kept = logging.LogRecord(
+        name="root",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="Starting up",
+        args=(),
+        exc_info=None,
+    )
+
+    assert filt.filter(dropped) is False
+    assert filt.filter(kept) is True
+
+
 def test_position_comes_from_settings():
     svc, _ = build_service()
     p = svc._dbusservice.paths
@@ -296,7 +324,7 @@ def test_update_does_not_increment_on_exception():
     )
     p = svc._dbusservice.paths
     before = p["/UpdateIndex"]
-    assert svc._update() is True  # method should be robust and return True
+    assert svc._update() is False
     assert p["/UpdateIndex"] == before
 
 
@@ -347,7 +375,7 @@ def test_update_success_avoids_info_log_spam(caplog):
     svc, _ = build_service()
 
     with caplog.at_level(logging.INFO, logger=m.LOG.name):
-        assert svc._update() is True
+        assert svc._update() is False
 
     assert not [record for record in caplog.records if record.levelno == logging.INFO]
 
@@ -372,12 +400,11 @@ def test_update_handles_none_data_and_disarms_connection():
     p = svc._dbusservice.paths
     before = p["/UpdateIndex"]
     assert svc._failure_count == 0
-    assert svc._update() is True
+    assert svc._update() is False
     assert p["/UpdateIndex"] == before
     assert p["/Connected"] == 0
     assert p["/Status"].startswith("Update failed")
     assert svc._failure_count == 1
-    assert svc._backoff_until is not None
 
 
 def test_update_failure_logs_warning_with_backoff(caplog):
@@ -396,10 +423,43 @@ def test_update_failure_logs_warning_with_backoff(caplog):
     )
 
     with caplog.at_level(logging.WARNING, logger=m.LOG.name):
-        assert svc._update() is True
+        assert svc._update() is False
 
     warnings = [
         record.message for record in caplog.records if record.levelno == logging.WARNING
     ]
     assert any("Update failed for test.service" in message for message in warnings)
     assert any("retry in" in message for message in warnings)
+
+
+def test_update_reschedules_after_completion():
+    spy = SpyTimeout()
+    svc, _ = build_service(timeout_impl=spy.add)
+
+    assert spy.calls == [(1000, svc._update)]
+    assert svc._update() is False
+    assert spy.calls[-1] == (1000, svc._update)
+    assert len(spy.calls) == 2
+
+
+def test_update_failure_reschedules_with_exponential_backoff():
+    class RaisingConnector:
+        def getData(self):
+            raise RuntimeError("boom")
+
+    settings = FakeSettingsForService()
+    spy = SpyTimeout()
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={"/Ac/Power": {"initial": 0, "textformat": m._format_w}},
+        data_connector=RaisingConnector(),
+        service_factory=FakeService,
+        timeout_add=spy.add,
+    )
+
+    assert spy.calls == [(1000, svc._update)]
+    assert svc._update() is False
+    assert spy.calls[-1] == (1000, svc._update)
+    assert svc._update() is False
+    assert spy.calls[-1] == (2000, svc._update)

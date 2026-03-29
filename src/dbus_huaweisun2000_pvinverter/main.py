@@ -47,6 +47,20 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only on target hardw
 LOG = logging.getLogger(__name__)
 
 
+class _RuntimeNoiseFilter(logging.Filter):
+    NOISY_MESSAGES = {"start update", "end update"}
+    NOISY_PREFIXES = ("set /",)
+
+    def filter(self, record):
+        message = record.getMessage()
+        if record.name == "root" and (
+            message in self.NOISY_MESSAGES
+            or any(message.startswith(prefix) for prefix in self.NOISY_PREFIXES)
+        ):
+            return False
+        return True
+
+
 class DbusSun2000Service:
     def __init__(
         self,
@@ -73,7 +87,6 @@ class DbusSun2000Service:
         self._update_interval_ms = max(int(settings.get("update_time_ms")), 100)
         self._timeout_add = timeout_add
         self._failure_count = 0
-        self._backoff_until: Optional[float] = None
         self._last_update: Optional[float] = None
 
         logging.debug(
@@ -125,22 +138,14 @@ class DbusSun2000Service:
 
         self._dbusservice.register()
 
-        timeout_add(
-            self._update_interval_ms,
-            self._update,
-        )  # pause in ms before the next request
+        self._schedule_next_update(self._update_interval_ms)
+
+    def _schedule_next_update(self, delay_ms):
+        self._timeout_add(max(int(delay_ms), 100), self._update)
 
     def _update(self):
-        now = time.monotonic()
-        if self._backoff_until and now < self._backoff_until:
-            LOG.debug(
-                "Skipping update for %s; waiting %.2fs before next attempt",
-                self._service_name,
-                self._backoff_until - now,
-            )
-            return True
-
         start = time.monotonic()
+        next_delay_ms = self._update_interval_ms
         with self._dbusservice as s:
 
             try:
@@ -195,7 +200,6 @@ class DbusSun2000Service:
                     )
 
                 self._failure_count = 0
-                self._backoff_until = None
 
             except Exception as e:
                 self._failure_count += 1
@@ -204,7 +208,7 @@ class DbusSun2000Service:
                     * (2 ** (self._failure_count - 1)),
                     60,
                 )
-                self._backoff_until = time.monotonic() + backoff_seconds
+                next_delay_ms = int(backoff_seconds * 1000)
                 s["/Connected"] = 0
                 s["/Status"] = f"Update failed: {e}"[:80]
                 LOG.warning(
@@ -216,7 +220,8 @@ class DbusSun2000Service:
                 )
                 LOG.debug("Update traceback for %s", self._service_name, exc_info=e)
 
-        return True
+        self._schedule_next_update(next_delay_ms)
+        return False
 
     def _handlechangedvalue(self, path, value):
         logging.debug("someone else updated %s to %s" % (path, value))
@@ -296,13 +301,17 @@ def _is_unconfigured_host(host):
 
 
 def main():
-
+    handler = logging.StreamHandler()
+    handler.addFilter(_RuntimeNoiseFilter())
     logging.basicConfig(
         format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         level=config.LOGGING,
-        handlers=[logging.StreamHandler()],
+        handlers=[handler],
+        force=True,
     )
+    logging.getLogger("pymodbus").setLevel(logging.WARNING)
+    logging.getLogger("dbus").setLevel(logging.WARNING)
 
     # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
     DBusGMainLoop(set_as_default=True)

@@ -1,4 +1,5 @@
 import inspect
+import logging
 import pathlib
 import sys
 import types
@@ -79,6 +80,8 @@ def test_runtime_modbus_defaults_are_shared():
     assert config.DEFAULT_MODBUS_HOST == "255.255.255.255"
     assert config.DEFAULT_MODBUS_PORT == 502
     assert config.DEFAULT_MODBUS_UNIT == 0
+    assert config.DEFAULT_LOGLEVEL == "INFO"
+    assert config.LOGGING == logging.INFO
     assert config.UNCONFIGURED_MODBUS_HOSTS == {"", "0.0.0.0", "255.255.255.255"}
 
     assert settings.get("modbus_host") == config.DEFAULT_MODBUS_HOST
