@@ -81,6 +81,7 @@ class DbusSun2000Service:
         timeout_add=GLib.timeout_add,
     ):
         self._dbusservice = service_factory(servicename, register=False)
+        self._settings = settings
         self._paths = paths
         self._data_connector = data_connector
         self._service_name = servicename
@@ -106,7 +107,12 @@ class DbusSun2000Service:
         self._dbusservice.add_path("/ProductId", 0)  # Huawei does not have a product id
         self._dbusservice.add_path("/ModelID", model_id)
         self._dbusservice.add_path("/ProductName", productname)
-        self._dbusservice.add_path("/CustomName", settings.get("custom_name"))
+        self._dbusservice.add_path(
+            "/CustomName",
+            settings.get("custom_name"),
+            writeable=True,
+            onchangecallback=self._handlechangedvalue,
+        )
         self._dbusservice.add_path("/FirmwareVersion", firmware_version)
         self._dbusservice.add_path("/Info/SoftwareVersion", software_version)
         self._dbusservice.add_path("/HardwareVersion", hardware_version)
@@ -119,6 +125,8 @@ class DbusSun2000Service:
         self._dbusservice.add_path(
             "/Position",
             settings.get("position"),
+            writeable=True,
+            onchangecallback=self._handlechangedvalue,
         )  # 0 = AC Input, 1 = AC-Out 1, AC-Out 2
         self._dbusservice.add_path("/Serial", serialnumber)
         self._dbusservice.add_path("/Part", partnumber)
@@ -224,6 +232,27 @@ class DbusSun2000Service:
         return False
 
     def _handlechangedvalue(self, path, value):
+        if path == "/Position":
+            try:
+                position = int(value)
+            except (TypeError, ValueError):
+                LOG.warning("Rejecting invalid position value: %r", value)
+                return False
+
+            if position < 0 or position > 2:
+                LOG.warning("Rejecting out-of-range position value: %r", value)
+                return False
+
+            self._settings.set("position", position)
+            LOG.info("Updated runtime position to %d", position)
+            return True
+
+        if path == "/CustomName":
+            custom_name = str(value)
+            self._settings.set("custom_name", custom_name)
+            LOG.info("Updated runtime custom name to %s", custom_name)
+            return True
+
         logging.debug("someone else updated %s to %s" % (path, value))
         return True  # accept the change
 

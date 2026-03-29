@@ -3,6 +3,7 @@ import logging
 import pathlib
 import sys
 import types
+import pytest
 
 
 class _FakeModbusTcpClient:
@@ -67,6 +68,7 @@ from dbus_huaweisun2000_pvinverter.connector_modbus import (  # noqa: E402
     ModbusDataCollector2000Delux,
 )
 from dbus_huaweisun2000_pvinverter.settings import HuaweiSUN2000Settings  # noqa: E402
+from dbus_huaweisun2000_pvinverter import settings as settings_module  # noqa: E402
 from dbus_huaweisun2000_pvinverter.sun2000_modbus.inverter import Sun2000  # noqa: E402
 
 
@@ -111,3 +113,29 @@ def test_docker_playground_documents_explicit_simulator_override():
     assert "DBUS_HUAWEISUN2000_MODBUS_UNIT=1" in compose
     assert "defaults are host `255.255.255.255`, port `502`, and unit `0`." in readme
     assert "The playground pins the simulator to Modbus unit" in readme
+
+
+def test_runtime_mutable_settings_do_not_request_restart(monkeypatch):
+    settings = HuaweiSUN2000Settings()
+    exit_calls = []
+
+    monkeypatch.setattr(
+        settings_module.sys, "exit", lambda code=0: exit_calls.append(code)
+    )
+
+    settings.set("position", 2)
+    settings.set("custom_name", "Huawei Runtime")
+
+    assert exit_calls == []
+
+
+def test_connection_settings_still_request_restart(monkeypatch):
+    settings = HuaweiSUN2000Settings()
+
+    def _raise_exit(code=0):
+        raise SystemExit(code)
+
+    monkeypatch.setattr(settings_module.sys, "exit", _raise_exit)
+
+    with pytest.raises(SystemExit):
+        settings.set("modbus_host", "192.0.2.20")

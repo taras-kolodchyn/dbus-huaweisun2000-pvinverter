@@ -74,6 +74,7 @@ class SessionBus(dbus.bus.BusConnection):
 
 
 class HuaweiSUN2000Settings(object):
+    RUNTIME_MUTABLE_SETTINGS = {"custom_name", "position"}
 
     def __init__(self):
         # path, default value, min, max, logging silent or not
@@ -157,6 +158,15 @@ class HuaweiSUN2000Settings(object):
         return SessionBus() if "DBUS_SESSION_BUS_ADDRESS" in os.environ else SystemBus()
 
     def _handle_changed_setting(self, setting, oldvalue, newvalue):
+        if setting in self.RUNTIME_MUTABLE_SETTINGS:
+            logging.info(
+                "Runtime setting changed without restart: %s old=%s new=%s",
+                setting,
+                oldvalue,
+                newvalue,
+            )
+            return
+
         logging.info(
             f"setting changed, setting: {setting}, old: {oldvalue}, new: {newvalue}"
         )

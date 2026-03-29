@@ -105,6 +105,14 @@ sys.modules["dbus_huaweisun2000_pvinverter.settings"] = settings
 # config
 config = types.SimpleNamespace(
     LOGGING=10,
+    DEFAULT_MODBUS_HOST="255.255.255.255",
+    DEFAULT_MODBUS_PORT=502,
+    DEFAULT_MODBUS_UNIT=0,
+    DEFAULT_PHASE_TYPE_OVERRIDE="",
+    DEFAULT_CUSTOM_NAME="Huawei SUN2000",
+    DEFAULT_POSITION=0,
+    DEFAULT_UPDATE_TIME_MS=1000,
+    DEFAULT_POWER_CORRECTION_FACTOR=1.0,
     UNCONFIGURED_MODBUS_HOSTS={"", "0.0.0.0", "255.255.255.255"},
 )
 sys.modules["dbus_huaweisun2000_pvinverter.config"] = config
@@ -125,20 +133,36 @@ spec = importlib.util.spec_from_file_location(
 m = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = m
 spec.loader.exec_module(m)
+sys.modules.pop("dbus", None)
+sys.modules.pop("dbus.mainloop", None)
+sys.modules.pop("dbus.mainloop.glib", None)
+sys.modules.pop("gi", None)
+sys.modules.pop("gi.repository", None)
+sys.modules.pop("gi.repository.GLib", None)
+sys.modules.pop("vedbus", None)
+sys.modules.pop("dbus_huaweisun2000_pvinverter.connector_modbus", None)
+sys.modules.pop("dbus_huaweisun2000_pvinverter.settings", None)
+sys.modules.pop("dbus_huaweisun2000_pvinverter.config", None)
 
 # ----------------------- Local fakes for runtime tests -------------------------
 
 
 class FakeSettingsForService:
+    def __init__(self):
+        self.values = {
+            "custom_name": "test_custom_name",
+            "position": 1,
+            "update_time_ms": 1000,
+        }
+
     def get_vrm_instance(self):
         return 123
 
     def get(self, key):
-        return {
-            "custom_name": "test_custom_name",
-            "position": 1,
-            "update_time_ms": 1000,
-        }.get(key, None)
+        return self.values.get(key, None)
+
+    def set(self, key, value):
+        self.values[key] = value
 
 
 class FakeConnectorForService:
@@ -332,6 +356,8 @@ def test_writeable_flags_and_callbacks_present():
     svc, _ = build_service()
     meta = svc._dbusservice.meta
     assert meta["/Connected"]["writeable"] is True
+    assert meta["/Position"]["writeable"] is True
+    assert meta["/CustomName"]["writeable"] is True
     assert callable(meta["/Ac/Power"]["gettextcallback"])
     assert callable(meta["/Ac/Power"]["onchangecallback"])
 
@@ -339,6 +365,30 @@ def test_writeable_flags_and_callbacks_present():
 def test_handlechangedvalue_accepts_changes():
     svc, _ = build_service()
     assert svc._handlechangedvalue("/any", 42) is True
+
+
+def test_handlechangedvalue_updates_position_setting():
+    svc, _ = build_service()
+
+    assert svc._handlechangedvalue("/Position", 2) is True
+    assert svc._settings.get("position") == 2
+
+
+def test_handlechangedvalue_rejects_invalid_position():
+    svc, _ = build_service()
+
+    assert svc._handlechangedvalue("/Position", 99) is False
+    assert svc._settings.get("position") == 1
+
+    assert svc._handlechangedvalue("/Position", "bad") is False
+    assert svc._settings.get("position") == 1
+
+
+def test_handlechangedvalue_updates_custom_name_setting():
+    svc, _ = build_service()
+
+    assert svc._handlechangedvalue("/CustomName", "Huawei Field") is True
+    assert svc._settings.get("custom_name") == "Huawei Field"
 
 
 def test_unconfigured_host_detection():
