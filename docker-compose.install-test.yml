@@ -1,0 +1,4 @@
+services:
+  venus:
+    environment:
+      - DBUS_HUAWEISUN2000_USE_INSTALL_SH=1

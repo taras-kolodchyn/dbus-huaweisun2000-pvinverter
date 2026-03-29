@@ -5,6 +5,8 @@ import logging
 import os
 import sys
 
+from . import config
+
 sys.path.insert(
     1,
     os.path.join(
@@ -28,6 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover - allows imports on dev systems
                 "modbus_host": os.getenv("DBUS_HUAWEISUN2000_MODBUS_HOST"),
                 "modbus_port": os.getenv("DBUS_HUAWEISUN2000_MODBUS_PORT"),
                 "modbus_unit": os.getenv("DBUS_HUAWEISUN2000_MODBUS_UNIT"),
+                "phase_type_override": os.getenv("DBUS_HUAWEISUN2000_PHASE_TYPE"),
                 "update_time_ms": os.getenv("DBUS_HUAWEISUN2000_UPDATE_TIME_MS"),
                 "power_correction_factor": os.getenv(
                     "DBUS_HUAWEISUN2000_POWER_CORRECTION"
@@ -71,55 +74,63 @@ class SessionBus(dbus.bus.BusConnection):
 
 
 class HuaweiSUN2000Settings(object):
+    RUNTIME_MUTABLE_SETTINGS = {"custom_name", "position"}
 
     def __init__(self):
         # path, default value, min, max, logging silent or not
         supported_settings = {
             "modbus_host": [
                 "/Settings/HuaweiSUN2000/ModbusHost",
-                "192.168.5.186",
+                config.DEFAULT_MODBUS_HOST,
                 "",
                 "",
                 0,
             ],
             "modbus_port": [
                 "/Settings/HuaweiSUN2000/ModbusPort",
-                502,
+                config.DEFAULT_MODBUS_PORT,
                 1,
                 65536,
                 0,
             ],
             "modbus_unit": [
                 "/Settings/HuaweiSUN2000/ModbusUnit",
-                0,
+                config.DEFAULT_MODBUS_UNIT,
                 0,
                 247,
                 0,
             ],
+            "phase_type_override": [
+                "/Settings/HuaweiSUN2000/PhaseTypeOverride",
+                config.DEFAULT_PHASE_TYPE_OVERRIDE,
+                "",
+                "",
+                0,
+            ],
             "custom_name": [
                 "/Settings/HuaweiSUN2000/CustomName",
-                "Huawei SUN2000",
+                config.DEFAULT_CUSTOM_NAME,
                 "",
                 "",
                 0,
             ],
             "position": [
                 "/Settings/HuaweiSUN2000/Position",
-                0,
+                config.DEFAULT_POSITION,
                 0,
                 2,
                 0,
             ],
             "update_time_ms": [
                 "/Settings/HuaweiSUN2000/UpdateTimeMS",
-                3000,
+                config.DEFAULT_UPDATE_TIME_MS,
                 1000,
                 100000,
                 0,
             ],
             "power_correction_factor": [
                 "/Settings/HuaweiSUN2000/PowerCorrectionFactor",
-                0.995,
+                config.DEFAULT_POWER_CORRECTION_FACTOR,
                 0.001,
                 100.0,
                 0,
@@ -147,6 +158,15 @@ class HuaweiSUN2000Settings(object):
         return SessionBus() if "DBUS_SESSION_BUS_ADDRESS" in os.environ else SystemBus()
 
     def _handle_changed_setting(self, setting, oldvalue, newvalue):
+        if setting in self.RUNTIME_MUTABLE_SETTINGS:
+            logging.info(
+                "Runtime setting changed without restart: %s old=%s new=%s",
+                setting,
+                oldvalue,
+                newvalue,
+            )
+            return
+
         logging.info(
             f"setting changed, setting: {setting}, old: {oldvalue}, new: {newvalue}"
         )

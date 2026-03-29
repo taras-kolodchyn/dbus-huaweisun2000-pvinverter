@@ -15,19 +15,59 @@ except ImportError:  # pragma: no cover - legacy pymodbus 2.x names
         pass
 
 
+from .. import config
 from . import datatypes
 
-logging.basicConfig(level=logging.INFO)
+LOG = logging.getLogger(__name__)
+
+
+class ModbusResponseError(ModbusIOException):
+    def __init__(self, address, quantity, response):
+        end_address = address + quantity - 1
+        self.address = address
+        self.quantity = quantity
+        self.end_address = end_address
+        self.response = response
+        self.function_code = getattr(response, "function_code", None)
+        self.exception_code = getattr(
+            response,
+            "exception_code",
+            getattr(response, "exceptionCode", None),
+        )
+        super().__init__(
+            "Modbus exception response while reading "
+            f"{address}-{end_address}: {response}"
+        )
+
+
+class UnsupportedRegisterError(ModbusResponseError):
+    pass
+
+
+def _raise_on_error_response(response, address, quantity):
+    if isinstance(response, ModbusIOException):
+        LOG.error("Inverter modbus unit did not respond")
+        raise response
+
+    if hasattr(response, "isError") and response.isError():
+        exception_code = getattr(
+            response,
+            "exception_code",
+            getattr(response, "exceptionCode", None),
+        )
+        if exception_code == 2:
+            raise UnsupportedRegisterError(address, quantity, response)
+        raise ModbusResponseError(address, quantity, response)
 
 
 class Sun2000:
     def __init__(
         self,
         host,
-        port=502,
+        port=config.DEFAULT_MODBUS_PORT,
         timeout=5,
         wait=2,
-        modbus_unit=3,
+        modbus_unit=config.DEFAULT_MODBUS_UNIT,
         retries=3,
         retry_delay=1,
     ):
@@ -47,24 +87,36 @@ class Sun2000:
         self._host = host
         self._port = port
 
-    def connect(self):
+    @staticmethod
+    def _is_fast_retry_error(error):
+        message = str(error)
+        return (
+            "Connection unexpectedly closed" in message
+            or "No Response received from the remote unit" in message
+            or "Unable to decode response" in message
+        )
+
+    def connect(self, post_connect_delay=None):
         if self.isConnected():
             return True
 
+        effective_post_connect_delay = (
+            self._post_connect_delay
+            if post_connect_delay is None
+            else max(float(post_connect_delay), 0.0)
+        )
         self.inverter.connect()
         deadline = time.monotonic() + max(self._connect_timeout, 0)
         while not self.isConnected() and time.monotonic() < deadline:
             time.sleep(self._connect_poll_interval)
 
         if self.isConnected():
-            if self._post_connect_delay:
-                time.sleep(self._post_connect_delay)
-            logging.info(
-                "Successfully connected to inverter %s:%s", self._host, self._port
-            )
+            if effective_post_connect_delay:
+                time.sleep(effective_post_connect_delay)
+            LOG.info("Successfully connected to inverter %s:%s", self._host, self._port)
             return True
 
-        logging.error(
+        LOG.error(
             "Connection to inverter %s:%s failed after %.1fs",
             self._host,
             self._port,
@@ -86,61 +138,93 @@ class Sun2000:
         """Check if underlying tcp socket is open"""
         return self.inverter.is_socket_open()
 
-    def read_raw_value(self, register):
+    def _resolve_retry_policy(self, retries=None, retry_delay=None):
+        effective_retries = self.retries if retries is None else retries
+        effective_retry_delay = self.retry_delay if retry_delay is None else retry_delay
+        return max(int(effective_retries), 1), max(float(effective_retry_delay), 0.0)
+
+    def _reconnect_for_retry(self, *, fast=False):
+        try:
+            self.disconnect()
+        except Exception as disconnect_ex:
+            LOG.warning("Error while disconnecting: %s", disconnect_ex)
+        try:
+            self.connect(post_connect_delay=0 if fast else None)
+        except Exception as connect_ex:
+            LOG.warning("Error while reconnecting: %s", connect_ex)
+
+    def read_raw_value(self, register, retries=None, retry_delay=None):
         # Try to read the register value
         # with several retries in case of communication errors
         if not self.isConnected():
             raise ValueError("Inverter is not connected")
 
+        effective_retries, effective_retry_delay = self._resolve_retry_policy(
+            retries=retries,
+            retry_delay=retry_delay,
+        )
         attempt = 0
         last_exception = None
-        while attempt < self.retries:
+        while attempt < effective_retries:
             try:
                 register_value = self.inverter.read_holding_registers(
                     register.value.address,
                     register.value.quantity,
                     unit=self.modbus_unit,
                 )
-                if isinstance(register_value, ModbusIOException):
-                    logging.error("Inverter modbus unit did not respond")
-                    raise register_value
+                _raise_on_error_response(
+                    register_value,
+                    register.value.address,
+                    register.value.quantity,
+                )
                 # If successful, decode and return the value
                 return datatypes.decode(
                     register_value.encode()[1:],
                     register.value.data_type,
                 )
+            except UnsupportedRegisterError:
+                raise
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
-                logging.error(f"Read attempt {attempt + 1} failed: " f"{ex}")
-                time.sleep(self.retry_delay)
-                # Try to reconnect before next attempt
-                try:
-                    self.disconnect()
-                except Exception as disconnect_ex:
-                    logging.warning(f"Error while disconnecting: {disconnect_ex}")
-                try:
-                    self.connect()
-                except Exception as connect_ex:
-                    logging.warning(f"Error while reconnecting: {connect_ex}")
-            attempt += 1
+                LOG.error("Read attempt %d failed: %s", attempt + 1, ex)
+                attempt += 1
+                if attempt >= effective_retries:
+                    break
+                fast_retry = attempt == 1 and self._is_fast_retry_error(ex)
+                if fast_retry:
+                    LOG.debug(
+                        "Fast retrying register %s after transport error",
+                        register.value.address,
+                    )
+                elif effective_retry_delay:
+                    time.sleep(effective_retry_delay)
+                self._reconnect_for_retry(fast=fast_retry)
         # All retries failed, raise the last exception
-        logging.critical("All retries to read register failed")
+        LOG.critical("All retries to read register failed")
         raise (
             last_exception
             if last_exception
             else Exception("Unknown error during register read")
         )
 
-    def read(self, register):
-        raw_value = self.read_raw_value(register)
+    def read(self, register, retries=None, retry_delay=None):
+        raw_value = self.read_raw_value(
+            register,
+            retries=retries,
+            retry_delay=retry_delay,
+        )
 
         if register.value.gain is None:
             return raw_value
         else:
             return raw_value / register.value.gain
 
-    def read_formatted(self, register):
-        value = self.read(register)
+    def read_formatted(self, register, retries=None, retry_delay=None):
+        value = self.read(
+            register,
+            retries=retries,
+            retry_delay=retry_delay,
+        )
 
         if register.value.unit is not None:
             return f"{value} {register.value.unit}"
@@ -149,7 +233,14 @@ class Sun2000:
         else:
             return value
 
-    def read_range(self, start_address, quantity=0, end_address=0):
+    def read_range(
+        self,
+        start_address,
+        quantity=0,
+        end_address=0,
+        retries=None,
+        retry_delay=None,
+    ):
         # Try to read a range of registers with retries
         if quantity == 0 and end_address == 0:
             raise ValueError(
@@ -169,39 +260,45 @@ class Sun2000:
         if end_address != 0:
             quantity = end_address - start_address + 1
 
+        effective_retries, effective_retry_delay = self._resolve_retry_policy(
+            retries=retries,
+            retry_delay=retry_delay,
+        )
         attempt = 0
         last_exception = None
-        while attempt < self.retries:
+        while attempt < effective_retries:
             try:
                 register_range_value = self.inverter.read_holding_registers(
                     start_address,
                     quantity,
                     unit=self.modbus_unit,
                 )
-                if isinstance(register_range_value, ModbusIOException):
-                    logging.error("Inverter modbus unit did not respond")
-                    raise register_range_value
+                _raise_on_error_response(register_range_value, start_address, quantity)
                 # If successful, decode and return the value
                 return datatypes.decode(
                     register_range_value.encode()[1:],
                     datatypes.DataType.MULTIDATA,
                 )
+            except UnsupportedRegisterError:
+                raise
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
-                logging.error(f"Range read attempt {attempt + 1} failed: " f"{ex}")
-                time.sleep(self.retry_delay)
-                # Try to reconnect before next attempt
-                try:
-                    self.disconnect()
-                except Exception as disconnect_ex:
-                    logging.warning(f"Error while disconnecting: {disconnect_ex}")
-                try:
-                    self.connect()
-                except Exception as connect_ex:
-                    logging.warning(f"Error while reconnecting: {connect_ex}")
-            attempt += 1
+                LOG.error("Range read attempt %d failed: %s", attempt + 1, ex)
+                attempt += 1
+                if attempt >= effective_retries:
+                    break
+                fast_retry = attempt == 1 and self._is_fast_retry_error(ex)
+                if fast_retry:
+                    LOG.debug(
+                        "Fast retrying range %s-%s after transport error",
+                        start_address,
+                        start_address + quantity - 1,
+                    )
+                elif effective_retry_delay:
+                    time.sleep(effective_retry_delay)
+                self._reconnect_for_retry(fast=fast_retry)
         # All retries failed, raise the last exception
-        logging.critical("All retries to read range of registers failed")
+        LOG.critical("All retries to read range of registers failed")
         raise (
             last_exception
             if last_exception

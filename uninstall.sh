@@ -1,72 +1,95 @@
 #!/bin/bash
-set -x
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-SERVICE_NAME=$(basename $SCRIPT_DIR)
-filename=/data/rc.local
+set -eu
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+SERVICE_NAME=$(basename "$SCRIPT_DIR")
+RC_LOCAL="/data/rc.local"
+GUI_V2_DIR="/opt/victronenergy/gui-v2"
+BACKUP_DIR="$SCRIPT_DIR/.install-backup"
+LEGACY_GUI_V2_BACKUP_DIR="$BACKUP_DIR/gui-v2"
+
+stop_supervised_service() {
+    local service_path=$1
+    if [ ! -e "$service_path" ]; then
+        return
+    fi
+
+    echo "Stopping supervised service: $service_path"
+    svc -dx "$service_path/log" 2>/dev/null || true
+    svc -dx "$service_path" 2>/dev/null || true
+    sleep 1
+}
+
+cleanup_supervise_dirs() {
+    local service_root=$1
+    rm -rf "$service_root/supervise" "$service_root/log/supervise"
+}
+
+restore_legacy_gui_v2_backups() {
+    local backup_root=$1
+    local target_root=$2
+    local backup_path
+    local relative_path
+    local target_path
+
+    if [ ! -d "$backup_root" ] || [ ! -d "$target_root" ]; then
+        return
+    fi
+
+    echo "Restoring legacy gui-v2 overlay backups from $backup_root"
+    find "$backup_root" -type f -name '*.orig' | while read -r backup_path; do
+        relative_path=${backup_path#"$backup_root"/}
+        target_path="$target_root/${relative_path%.orig}"
+
+        mkdir -p "$(dirname "$target_path")"
+        echo "Restoring $target_path from $backup_path"
+        cp "$backup_path" "$target_path"
+        rm -f "$backup_path"
+    done
+
+    find "$backup_root" -depth -type d -empty -delete 2>/dev/null || true
+    rmdir "$BACKUP_DIR" 2>/dev/null || true
+}
+
+stop_matching_processes() {
+    local label=$1
+    local pattern=$2
+    local pids
+
+    pids=$(ps | grep "$pattern" | awk '{print $1}' || true)
+    if [ -z "$pids" ]; then
+        echo "No running ${label} processes found."
+        return
+    fi
+
+    echo "Stopping ${label} process(es): $pids"
+    for pid in $pids; do
+        case "$pid" in
+            ''|*[!0-9]*)
+                echo "Skip invalid PID: '$pid'"
+                ;;
+            *)
+                kill "$pid" 2>/dev/null || true
+                ;;
+        esac
+    done
+}
+
+stop_supervised_service "/service/$SERVICE_NAME"
+cleanup_supervise_dirs "$SCRIPT_DIR/service"
 
 echo "Removing service: /service/$SERVICE_NAME"
-if rm /service/$SERVICE_NAME; then
-  echo "Removed /service/$SERVICE_NAME successfully."
-else
-  echo "Failed to remove /service/$SERVICE_NAME. It might already be removed."
+rm -f "/service/$SERVICE_NAME"
+
+stop_matching_processes "driver" "[d]bus_huaweisun2000_pvinverter"
+stop_matching_processes "multilog" "[m]ultilog t s25000 n4 /var/log/dbus-huaweisun2000"
+
+if [ -f "$RC_LOCAL" ]; then
+    STARTUP=$SCRIPT_DIR/install.sh
+    echo "Removing startup entry from $RC_LOCAL: $STARTUP"
+    sed -i "\~$STARTUP~d" "$RC_LOCAL"
 fi
 
-echo "Killing python process running dbus_huaweisun2000_pvinverter"
-PIDS=$(ps | grep '[d]bus_huaweisun2000_pvinverter' | awk '{print $1}')
-echo "Found PIDs: $PIDS"
-if [ -n "$PIDS" ]; then
-  for PID in $PIDS; do
-    echo "Processing PID: $PID"
-    if [[ -n "$PID" && "$PID" =~ ^[0-9]+$ ]]; then
-      echo "Killing process: $PID"
-      if kill "$PID" 2>/dev/null; then
-        echo "Killed process $PID successfully."
-      else
-        echo "Failed to kill process $PID."
-      fi
-    fi
-  done
-fi
-
-echo "Killing multilog process for dbus-huaweisun2000"
-PIDS_LOG=$(ps | grep '[m]ultilog t s25000 n4 /var/log/dbus-huaweisun2000' | awk '{print $1}')
-echo "Found multilog PIDs: $PIDS_LOG"
-if [ -n "$PIDS_LOG" ]; then
-  for PID in $PIDS_LOG; do
-    echo "Processing multilog PID: $PID"
-    if [ -n "$PID" ] && [[ "$PID" =~ ^[0-9]+$ ]]; then
-      if kill -0 "$PID" 2>/dev/null; then
-        echo "Killing multilog process: $PID"
-        if kill "$PID" 2>/dev/null; then
-          echo "Killed multilog process $PID successfully."
-        else
-          echo "Failed to kill multilog process $PID."
-        fi
-      else
-        echo "Skip dead PID: '$PID'"
-      fi
-    else
-      echo "Skip invalid PID: '$PID'"
-    fi
-  done
-fi
-
-if [ -f "$SCRIPT_DIR/service/run" ]; then
-  echo "Changing permissions: chmod a-x $SCRIPT_DIR/service/run"
-  chmod a-x $SCRIPT_DIR/service/run
-else
-  echo "File $SCRIPT_DIR/service/run not found, skipping chmod."
-fi
-
-if [ -f "$SCRIPT_DIR/restart.sh" ]; then
-  echo "Running restart script: $SCRIPT_DIR/restart.sh"
-  $SCRIPT_DIR/restart.sh
-else
-  echo "File $SCRIPT_DIR/restart.sh not found, skipping restart script."
-fi
-
-STARTUP=$SCRIPT_DIR/install.sh
-echo "Removing startup entry from $filename: $STARTUP"
-sed -i "\~$STARTUP~d" $filename
+restore_legacy_gui_v2_backups "$LEGACY_GUI_V2_BACKUP_DIR" "$GUI_V2_DIR"
 
 echo "Uninstall script completed."

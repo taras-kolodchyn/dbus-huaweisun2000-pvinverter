@@ -11,17 +11,20 @@ initial value, write to the dummy data via the dbus. See example.
 
 https://github.com/victronenergy/dbus_vebus_to_pvinverter/tree/master/test
 """
+
 import logging
 import os
 import platform
 import sys
 import time
+from collections import deque
 from typing import Dict, Optional
 
 from gi.repository import GLib
 from dbus.mainloop.glib import DBusGMainLoop
 
 from .connector_modbus import ModbusDataCollector2000Delux
+from .metrics import SERVICE_METRICS
 from .settings import HuaweiSUN2000Settings
 from . import config
 
@@ -45,6 +48,46 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only on target hardw
 LOG = logging.getLogger(__name__)
 
 
+class _RuntimeNoiseFilter(logging.Filter):
+    NOISY_MESSAGES = {"start update", "end update"}
+    NOISY_PREFIXES = ("set /",)
+
+    def filter(self, record):
+        message = record.getMessage()
+        if record.name == "root" and (
+            message in self.NOISY_MESSAGES
+            or any(message.startswith(prefix) for prefix in self.NOISY_PREFIXES)
+        ):
+            return False
+        return True
+
+
+def _is_missing_static_metadata(value):
+    if value is None:
+        return True
+
+    if isinstance(value, str):
+        return value.strip().lower() in {"", "unknown", "x", "none"}
+
+    return False
+
+
+def _normalize_product_id(model_id):
+    try:
+        product_id = int(float(model_id))
+    except (TypeError, ValueError):
+        return 0
+
+    return product_id if product_id > 0 else 0
+
+
+def _normalize_hardware_version(hardware_version, partnumber):
+    if _is_missing_static_metadata(hardware_version):
+        if not _is_missing_static_metadata(partnumber):
+            return partnumber
+    return hardware_version
+
+
 class DbusSun2000Service:
     def __init__(
         self,
@@ -65,14 +108,38 @@ class DbusSun2000Service:
         timeout_add=GLib.timeout_add,
     ):
         self._dbusservice = service_factory(servicename, register=False)
+        self._settings = settings
         self._paths = paths
         self._data_connector = data_connector
         self._service_name = servicename
         self._update_interval_ms = max(int(settings.get("update_time_ms")), 100)
+        self._idle_update_interval_ms = max(
+            self._update_interval_ms,
+            min(
+                max(
+                    self._update_interval_ms
+                    * config.ADAPTIVE_POLLING_IDLE_INTERVAL_MULTIPLIER,
+                    config.ADAPTIVE_POLLING_IDLE_MIN_UPDATE_TIME_MS,
+                ),
+                config.ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS,
+            ),
+        )
+        self._offline_min_update_interval_ms = max(
+            self._update_interval_ms,
+            config.ADAPTIVE_POLLING_OFFLINE_MIN_UPDATE_TIME_MS,
+        )
+        self._offline_max_update_interval_ms = max(
+            self._offline_min_update_interval_ms,
+            config.ADAPTIVE_POLLING_OFFLINE_MAX_UPDATE_TIME_MS,
+        )
         self._timeout_add = timeout_add
         self._failure_count = 0
-        self._backoff_until: Optional[float] = None
+        self._idle_cycle_count = 0
+        self._polling_mode = "active"
         self._last_update: Optional[float] = None
+        self._successful_update_count = 0
+        self._failed_update_count = 0
+        self._latency_samples = deque(maxlen=10)
 
         logging.debug(
             "%s /DeviceInstance = %d" % (servicename, settings.get_vrm_instance())
@@ -88,22 +155,38 @@ class DbusSun2000Service:
 
         # Create the mandatory objects
         self._dbusservice.add_path("/DeviceInstance", settings.get_vrm_instance())
-        self._dbusservice.add_path("/ProductId", 0)  # Huawei does not have a product id
+        self._dbusservice.add_path("/ProductId", _normalize_product_id(model_id))
         self._dbusservice.add_path("/ModelID", model_id)
         self._dbusservice.add_path("/ProductName", productname)
-        self._dbusservice.add_path("/CustomName", settings.get("custom_name"))
+        self._dbusservice.add_path(
+            "/CustomName",
+            settings.get("custom_name"),
+            writeable=True,
+            onchangecallback=self._handlechangedvalue,
+        )
         self._dbusservice.add_path("/FirmwareVersion", firmware_version)
         self._dbusservice.add_path("/Info/SoftwareVersion", software_version)
-        self._dbusservice.add_path("/HardwareVersion", hardware_version)
+        self._dbusservice.add_path(
+            "/HardwareVersion",
+            _normalize_hardware_version(hardware_version, partnumber),
+        )
         self._dbusservice.add_path("/Info/PhaseType", phase_type)
         self._dbusservice.add_path("/Connected", 1, writeable=True)
 
         # Create the mandatory objects
         self._dbusservice.add_path("/Latency", None)
+        self._dbusservice.add_path("/Diagnostics/PollingMode", self._polling_mode)
+        self._dbusservice.add_path("/Diagnostics/SuccessCount", 0)
+        self._dbusservice.add_path("/Diagnostics/FailureCount", 0)
+        self._dbusservice.add_path("/Diagnostics/ConsecutiveFailures", 0)
+        self._dbusservice.add_path("/Diagnostics/LatencyAverage", None)
+        self._dbusservice.add_path("/Diagnostics/LastUpdateTimestamp", None)
         self._dbusservice.add_path("/Role", "pvinverter")
         self._dbusservice.add_path(
             "/Position",
             settings.get("position"),
+            writeable=True,
+            onchangecallback=self._handlechangedvalue,
         )  # 0 = AC Input, 1 = AC-Out 1, AC-Out 2
         self._dbusservice.add_path("/Serial", serialnumber)
         self._dbusservice.add_path("/Part", partnumber)
@@ -123,38 +206,95 @@ class DbusSun2000Service:
 
         self._dbusservice.register()
 
-        timeout_add(
-            self._update_interval_ms,
-            self._update,
-        )  # pause in ms before the next request
+        self._schedule_next_update(self._update_interval_ms)
+
+    def _schedule_next_update(self, delay_ms):
+        self._timeout_add(max(int(delay_ms), 100), self._update)
+
+    @staticmethod
+    def _coerce_watts(value):
+        try:
+            return abs(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    def _is_idle_sample(self, meter_data: Dict[str, object]) -> bool:
+        power_keys = ("/Ac/Power", "/Dc/Power", "/Yield/Power")
+        observed_values = []
+        for key in power_keys:
+            watts = self._coerce_watts(meter_data.get(key))
+            if watts is None:
+                continue
+            observed_values.append(watts)
+
+        if not observed_values:
+            return False
+
+        return max(observed_values) < config.ADAPTIVE_POLLING_IDLE_POWER_THRESHOLD_W
+
+    def _set_polling_mode(self, mode: str, delay_ms: int):
+        if mode == self._polling_mode:
+            return
+
+        self._polling_mode = mode
+        LOG.info(
+            "Polling mode for %s changed to %s (%dms)",
+            self._service_name,
+            mode,
+            delay_ms,
+        )
+
+    def _resolve_offline_delay_ms(self) -> int:
+        return min(
+            self._offline_min_update_interval_ms
+            * (2 ** max(self._failure_count - 1, 0)),
+            self._offline_max_update_interval_ms,
+        )
+
+    def _resolve_next_delay_ms(self, meter_data: Dict[str, object]) -> int:
+        if self._is_idle_sample(meter_data):
+            self._idle_cycle_count += 1
+            if self._idle_cycle_count >= config.ADAPTIVE_POLLING_IDLE_CONFIRM_CYCLES:
+                self._set_polling_mode("idle", self._idle_update_interval_ms)
+                return self._idle_update_interval_ms
+        else:
+            self._idle_cycle_count = 0
+
+        self._set_polling_mode("active", self._update_interval_ms)
+        return self._update_interval_ms
+
+    def _update_diagnostics(self, service_paths):
+        service_paths["/Diagnostics/PollingMode"] = self._polling_mode
+        service_paths["/Diagnostics/SuccessCount"] = self._successful_update_count
+        service_paths["/Diagnostics/FailureCount"] = self._failed_update_count
+        service_paths["/Diagnostics/ConsecutiveFailures"] = self._failure_count
+        service_paths["/Diagnostics/LastUpdateTimestamp"] = self._last_update
+        if self._latency_samples:
+            service_paths["/Diagnostics/LatencyAverage"] = round(
+                sum(self._latency_samples) / len(self._latency_samples),
+                1,
+            )
+        else:
+            service_paths["/Diagnostics/LatencyAverage"] = None
 
     def _update(self):
-        now = time.monotonic()
-        if self._backoff_until and now < self._backoff_until:
-            LOG.debug(
-                "Skipping update for %s; waiting %.2fs before next attempt",
-                self._service_name,
-                self._backoff_until - now,
-            )
-            return True
-
         start = time.monotonic()
+        next_delay_ms = self._update_interval_ms
         with self._dbusservice as s:
 
             try:
-                logging.info("start update")
                 meter_data: Optional[Dict[str, object]] = self._data_connector.getData()
-                logging.info("end update")
 
                 if meter_data is None:
                     raise RuntimeError("Modbus returned no data")
 
+                updated_paths = 0
                 for path, value in meter_data.items():
                     if path not in s:
                         LOG.debug("Ignoring unexpected datapoint %s", path)
                         continue
-                    logging.info("set %s to %s", path, value)
                     s[path] = value
+                    updated_paths += 1
 
                 # increment UpdateIndex - to show that new data is available (and wrap)
                 s["/UpdateIndex"] = (s["/UpdateIndex"] + 1) % 256
@@ -162,6 +302,8 @@ class DbusSun2000Service:
                 # update lastupdate vars
                 self._last_update = time.time()
                 latency_ms = round((time.monotonic() - start) * 1000, 1)
+                self._latency_samples.append(latency_ms)
+                self._successful_update_count += 1
                 s["/Latency"] = latency_ms
                 s["/Connected"] = 1
                 status_message = meter_data.get("status_message")
@@ -174,24 +316,73 @@ class DbusSun2000Service:
                     except KeyError:
                         pass
 
+                if self._failure_count > 0:
+                    LOG.info(
+                        (
+                            "Recovered %s after %d failed update(s); applied "
+                            "%d datapoints in %.1fms"
+                        ),
+                        self._service_name,
+                        self._failure_count,
+                        updated_paths,
+                        latency_ms,
+                    )
+                else:
+                    LOG.debug(
+                        "Updated %s with %d datapoints in %.1fms",
+                        self._service_name,
+                        updated_paths,
+                        latency_ms,
+                    )
+
                 self._failure_count = 0
-                self._backoff_until = None
+                next_delay_ms = self._resolve_next_delay_ms(meter_data)
+                self._update_diagnostics(s)
 
             except Exception as e:
                 self._failure_count += 1
-                backoff_seconds = min(
-                    (self._update_interval_ms / 1000.0)
-                    * (2 ** (self._failure_count - 1)),
-                    60,
-                )
-                self._backoff_until = time.monotonic() + backoff_seconds
+                self._failed_update_count += 1
+                self._idle_cycle_count = 0
+                next_delay_ms = self._resolve_offline_delay_ms()
+                self._set_polling_mode("offline", next_delay_ms)
+                backoff_seconds = next_delay_ms / 1000.0
                 s["/Connected"] = 0
                 s["/Status"] = f"Update failed: {e}"[:80]
-                logging.critical("Error at %s", "_update", exc_info=e)
+                self._update_diagnostics(s)
+                LOG.warning(
+                    "Update failed for %s (failure #%d, retry in %.1fs): %s",
+                    self._service_name,
+                    self._failure_count,
+                    backoff_seconds,
+                    e,
+                )
+                LOG.debug("Update traceback for %s", self._service_name, exc_info=e)
 
-        return True
+        self._schedule_next_update(next_delay_ms)
+        return False
 
     def _handlechangedvalue(self, path, value):
+        if path == "/Position":
+            try:
+                position = int(value)
+            except (TypeError, ValueError):
+                LOG.warning("Rejecting invalid position value: %r", value)
+                return False
+
+            if position < 0 or position > 2:
+                LOG.warning("Rejecting out-of-range position value: %r", value)
+                return False
+
+            self._settings.set("position", position)
+            LOG.info("Updated runtime position to %d", position)
+            return True
+
+        if path == "/CustomName":
+            custom_name = str(value)
+            self._settings.set("custom_name", custom_name)
+            LOG.info("Updated runtime custom name to %s", custom_name)
+            return True
+
         logging.debug("someone else updated %s to %s" % (path, value))
         return True  # accept the change
 
@@ -242,14 +433,44 @@ def _format_n(p, v):
     return str(v)
 
 
-def main():
+FORMATTERS = {
+    "a": _format_a,
+    "hz": _format_hz,
+    "kwh": _format_kwh,
+    "n": _format_n,
+    "v": _format_v,
+    "w": _format_w,
+    "wh": _format_wh,
+}
 
+
+def _build_dbus_paths():
+    paths = {}
+    for path, spec in SERVICE_METRICS.items():
+        path_spec = {"initial": spec["initial"]}
+        formatter_key = spec.get("formatter")
+        if formatter_key is not None:
+            path_spec["textformat"] = FORMATTERS[formatter_key]
+        paths[path] = path_spec
+    return paths
+
+
+def _is_unconfigured_host(host):
+    return str(host).strip() in config.UNCONFIGURED_MODBUS_HOSTS
+
+
+def main():
+    handler = logging.StreamHandler()
+    handler.addFilter(_RuntimeNoiseFilter())
     logging.basicConfig(
         format="%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         level=config.LOGGING,
-        handlers=[logging.StreamHandler()],
+        handlers=[handler],
+        force=True,
     )
+    logging.getLogger("pymodbus").setLevel(logging.WARNING)
+    logging.getLogger("dbus").setLevel(logging.WARNING)
 
     # Have a mainloop, so we can send/receive asynchronous calls to and from dbus
     DBusGMainLoop(set_as_default=True)
@@ -262,14 +483,16 @@ def main():
     )
     logging.info(
         f"Settings: CustomName '{settings.get('custom_name')}', Position "
-        f"'{settings.get('position')}', UpdateTimeMS '{settings.get('update_time_ms')}'"
+        f"'{settings.get('position')}', UpdateTimeMS "
+        f"'{settings.get('update_time_ms')}', "
+        f"PhaseTypeOverride '{settings.get('phase_type_override')}'"
     )
     logging.info(
         f"Settings: PowerCorrectionFactor "
         f"'{settings.get('power_correction_factor')}'"
     )
 
-    while "255" in settings.get("modbus_host"):
+    while _is_unconfigured_host(settings.get("modbus_host")):
         # This catches the initial setting and allows the service
         # to be installed without configuring it first
         logging.warning(
@@ -290,7 +513,9 @@ def main():
     )
 
     while True:
-        staticdata = modbus.getStaticData()
+        staticdata = modbus.getStaticData(
+            phase_type_override=settings.get("phase_type_override")
+        )
         if staticdata is None:
             logging.error(
                 "Didn't receive static data from modbus, error is above. Sleeping "
@@ -308,41 +533,8 @@ def main():
     try:
         logging.info("Starting up")
 
-        dbuspath = {
-            "/Ac/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/Energy/Today": {"initial": None, "textformat": _format_wh},
-            #
-            "/Ac/L1/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/L1/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/L1/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/L1/Frequency": {"initial": None, "textformat": _format_hz},
-            "/Ac/L1/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/L1/Energy/Today": {"initial": None, "textformat": _format_wh},
-            #
-            "/Ac/MaxPower": {"initial": 20000, "textformat": _format_w},
-            "/Ac/StatusCode": {"initial": 0, "textformat": _format_n},
-            "/Ac/L2/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/L2/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/L2/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/L2/Frequency": {"initial": None, "textformat": _format_hz},
-            "/Ac/L2/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/L2/Energy/Today": {"initial": None, "textformat": _format_wh},
-            "/Ac/L3/Power": {"initial": 0, "textformat": _format_w},
-            "/Ac/L3/Current": {"initial": 0, "textformat": _format_a},
-            "/Ac/L3/Voltage": {"initial": 0, "textformat": _format_v},
-            "/Ac/L3/Frequency": {"initial": None, "textformat": _format_hz},
-            "/Ac/L3/Energy/Forward": {"initial": None, "textformat": _format_kwh},
-            "/Ac/L3/Energy/Today": {"initial": None, "textformat": _format_wh},
-            "/Dc/Power": {"initial": 0, "textformat": _format_w},
-            "/Status": {"initial": ""},
-        }
+        dbuspath = _build_dbus_paths()
 
-        # If HardwareVersion is empty or None, assign it the value of PN
-        if not staticdata["HardwareVersion"]:
-            staticdata["HardwareVersion"] = staticdata["PN"]
         DbusSun2000Service(
             servicename="com.victronenergy.pvinverter.sun2000",
             settings=settings,

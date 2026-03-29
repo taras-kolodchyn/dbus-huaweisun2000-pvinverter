@@ -1,3 +1,5 @@
 """Library for reading Huawei Sun2000 inverter metrics via Modbus TCP"""
 
-__version__ = "develop"
+from .. import __version__
+
+__all__ = ["__version__"]

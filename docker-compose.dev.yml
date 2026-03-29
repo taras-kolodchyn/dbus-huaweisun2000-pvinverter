@@ -4,6 +4,9 @@ services:
     working_dir: /workspace
     volumes:
       - .:/workspace
+    environment:
+      - MODBUS_SIM_PORT=15020
+      - MODBUS_SIM_UNIT=1
     command: ["bash", "-lc", "pip install 'pymodbus>=2,<3' && python docker/modbus_sim.py"]
 
   venus:
