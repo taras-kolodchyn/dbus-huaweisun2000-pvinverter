@@ -85,6 +85,10 @@ def test_runtime_modbus_defaults_are_shared():
     assert config.DEFAULT_LOGLEVEL == "INFO"
     assert config.LOGGING == logging.INFO
     assert config.UNCONFIGURED_MODBUS_HOSTS == {"", "0.0.0.0", "255.255.255.255"}
+    assert config.ADAPTIVE_POLLING_IDLE_POWER_THRESHOLD_W == 50.0
+    assert config.ADAPTIVE_POLLING_IDLE_CONFIRM_CYCLES == 3
+    assert config.ADAPTIVE_POLLING_IDLE_MIN_UPDATE_TIME_MS == 5000
+    assert config.ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS == 10000
 
     assert settings.get("modbus_host") == config.DEFAULT_MODBUS_HOST
     assert settings.get("modbus_port") == config.DEFAULT_MODBUS_PORT

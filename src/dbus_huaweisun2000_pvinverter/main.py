@@ -112,8 +112,21 @@ class DbusSun2000Service:
         self._data_connector = data_connector
         self._service_name = servicename
         self._update_interval_ms = max(int(settings.get("update_time_ms")), 100)
+        self._idle_update_interval_ms = max(
+            self._update_interval_ms,
+            min(
+                max(
+                    self._update_interval_ms
+                    * config.ADAPTIVE_POLLING_IDLE_INTERVAL_MULTIPLIER,
+                    config.ADAPTIVE_POLLING_IDLE_MIN_UPDATE_TIME_MS,
+                ),
+                config.ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS,
+            ),
+        )
         self._timeout_add = timeout_add
         self._failure_count = 0
+        self._idle_cycle_count = 0
+        self._polling_mode = "active"
         self._last_update: Optional[float] = None
 
         logging.debug(
@@ -180,6 +193,51 @@ class DbusSun2000Service:
     def _schedule_next_update(self, delay_ms):
         self._timeout_add(max(int(delay_ms), 100), self._update)
 
+    @staticmethod
+    def _coerce_watts(value):
+        try:
+            return abs(float(value))
+        except (TypeError, ValueError):
+            return None
+
+    def _is_idle_sample(self, meter_data: Dict[str, object]) -> bool:
+        power_keys = ("/Ac/Power", "/Dc/Power", "/Yield/Power")
+        observed_values = []
+        for key in power_keys:
+            watts = self._coerce_watts(meter_data.get(key))
+            if watts is None:
+                continue
+            observed_values.append(watts)
+
+        if not observed_values:
+            return False
+
+        return max(observed_values) < config.ADAPTIVE_POLLING_IDLE_POWER_THRESHOLD_W
+
+    def _set_polling_mode(self, mode: str, delay_ms: int):
+        if mode == self._polling_mode:
+            return
+
+        self._polling_mode = mode
+        LOG.info(
+            "Polling mode for %s changed to %s (%dms)",
+            self._service_name,
+            mode,
+            delay_ms,
+        )
+
+    def _resolve_next_delay_ms(self, meter_data: Dict[str, object]) -> int:
+        if self._is_idle_sample(meter_data):
+            self._idle_cycle_count += 1
+            if self._idle_cycle_count >= config.ADAPTIVE_POLLING_IDLE_CONFIRM_CYCLES:
+                self._set_polling_mode("idle", self._idle_update_interval_ms)
+                return self._idle_update_interval_ms
+        else:
+            self._idle_cycle_count = 0
+
+        self._set_polling_mode("active", self._update_interval_ms)
+        return self._update_interval_ms
+
     def _update(self):
         start = time.monotonic()
         next_delay_ms = self._update_interval_ms
@@ -237,9 +295,12 @@ class DbusSun2000Service:
                     )
 
                 self._failure_count = 0
+                next_delay_ms = self._resolve_next_delay_ms(meter_data)
 
             except Exception as e:
                 self._failure_count += 1
+                self._idle_cycle_count = 0
+                self._set_polling_mode("active", self._update_interval_ms)
                 backoff_seconds = min(
                     (self._update_interval_ms / 1000.0)
                     * (2 ** (self._failure_count - 1)),

@@ -113,6 +113,11 @@ config = types.SimpleNamespace(
     DEFAULT_POSITION=0,
     DEFAULT_UPDATE_TIME_MS=1000,
     DEFAULT_POWER_CORRECTION_FACTOR=1.0,
+    ADAPTIVE_POLLING_IDLE_POWER_THRESHOLD_W=50.0,
+    ADAPTIVE_POLLING_IDLE_CONFIRM_CYCLES=3,
+    ADAPTIVE_POLLING_IDLE_INTERVAL_MULTIPLIER=5,
+    ADAPTIVE_POLLING_IDLE_MIN_UPDATE_TIME_MS=5000,
+    ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS=10000,
     UNCONFIGURED_MODBUS_HOSTS={"", "0.0.0.0", "255.255.255.255"},
 )
 sys.modules["dbus_huaweisun2000_pvinverter.config"] = config
@@ -188,6 +193,17 @@ class FakeConnectorWithStatus:
             "/Ac/Current": 2,
             "status_message": "All good",
         }
+
+
+class SequencedConnector:
+    def __init__(self, samples):
+        self.samples = list(samples)
+        self.calls = 0
+
+    def getData(self):
+        index = min(self.calls, len(self.samples) - 1)
+        self.calls += 1
+        return dict(self.samples[index])
 
 
 class SpyTimeout:
@@ -541,3 +557,79 @@ def test_update_failure_reschedules_with_exponential_backoff():
     assert spy.calls[-1] == (1000, svc._update)
     assert svc._update() is False
     assert spy.calls[-1] == (2000, svc._update)
+
+
+def test_update_enters_idle_polling_after_consecutive_low_power_samples():
+    settings = FakeSettingsForService()
+    spy = SpyTimeout()
+    connector = SequencedConnector(
+        [
+            {"/Ac/Power": 0, "/Ac/Current": 0, "/Dc/Power": 0, "/Yield/Power": 0},
+            {"/Ac/Power": 0, "/Ac/Current": 0, "/Dc/Power": 0, "/Yield/Power": 0},
+            {"/Ac/Power": 0, "/Ac/Current": 0, "/Dc/Power": 0, "/Yield/Power": 0},
+        ]
+    )
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={
+            "/Ac/Power": {"initial": 0, "textformat": m._format_w},
+            "/Ac/Current": {"initial": 0, "textformat": m._format_a},
+            "/Dc/Power": {"initial": 0, "textformat": m._format_w},
+            "/Yield/Power": {"initial": 0, "textformat": m._format_w},
+        },
+        data_connector=connector,
+        service_factory=FakeService,
+        timeout_add=spy.add,
+    )
+
+    assert spy.calls == [(1000, svc._update)]
+    assert svc._update() is False
+    assert spy.calls[-1] == (1000, svc._update)
+    assert svc._update() is False
+    assert spy.calls[-1] == (1000, svc._update)
+    assert svc._update() is False
+    assert spy.calls[-1] == (5000, svc._update)
+    assert svc._polling_mode == "idle"
+
+
+def test_update_returns_to_active_polling_after_power_recovers():
+    settings = FakeSettingsForService()
+    spy = SpyTimeout()
+    connector = SequencedConnector(
+        [
+            {"/Ac/Power": 0, "/Ac/Current": 0, "/Dc/Power": 0, "/Yield/Power": 0},
+            {"/Ac/Power": 0, "/Ac/Current": 0, "/Dc/Power": 0, "/Yield/Power": 0},
+            {"/Ac/Power": 0, "/Ac/Current": 0, "/Dc/Power": 0, "/Yield/Power": 0},
+            {
+                "/Ac/Power": 200,
+                "/Ac/Current": 1,
+                "/Dc/Power": 250,
+                "/Yield/Power": 250,
+            },
+        ]
+    )
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={
+            "/Ac/Power": {"initial": 0, "textformat": m._format_w},
+            "/Ac/Current": {"initial": 0, "textformat": m._format_a},
+            "/Dc/Power": {"initial": 0, "textformat": m._format_w},
+            "/Yield/Power": {"initial": 0, "textformat": m._format_w},
+        },
+        data_connector=connector,
+        service_factory=FakeService,
+        timeout_add=spy.add,
+    )
+
+    svc._update()
+    svc._update()
+    svc._update()
+    assert spy.calls[-1] == (5000, svc._update)
+    assert svc._polling_mode == "idle"
+
+    svc._update()
+    assert spy.calls[-1] == (1000, svc._update)
+    assert svc._polling_mode == "active"
+    assert svc._idle_cycle_count == 0
