@@ -5,6 +5,7 @@ from dbus.mainloop.glib import DBusGMainLoop
 
 from . import config
 from .metrics import DIRECT_REGISTER_METRICS
+from .sun2000_modbus import datatypes
 from .settings import HuaweiSUN2000Settings
 from .sun2000_modbus import inverter
 from .sun2000_modbus import registers
@@ -17,6 +18,58 @@ PHASE_TYPE_UNKNOWN = "Unknown"
 
 _SINGLE_PHASE_MODEL_MARKERS = ("-L1",)
 _THREE_PHASE_MODEL_MARKERS = ("-M0", "-M1", "-M2", "-M3", "-M5", "-MB0", "-MAP0")
+_MAIN_DATA_RANGE = {
+    "start": 32064,
+    "end": 32085,
+    "registers": {
+        "/Dc/Power": registers.InverterEquipmentRegister.InputPower,
+        "/Ac/L1/Voltage": registers.InverterEquipmentRegister.PhaseAVoltage,
+        "/Ac/L2/Voltage": registers.InverterEquipmentRegister.PhaseBVoltage,
+        "/Ac/L3/Voltage": registers.InverterEquipmentRegister.PhaseCVoltage,
+        "/Ac/L1/Current": registers.InverterEquipmentRegister.PhaseACurrent,
+        "/Ac/L2/Current": registers.InverterEquipmentRegister.PhaseBCurrent,
+        "/Ac/L3/Current": registers.InverterEquipmentRegister.PhaseCCurrent,
+        "/Ac/Power": registers.InverterEquipmentRegister.ActivePower,
+        "_power_factor": registers.InverterEquipmentRegister.PowerFactor,
+        "_grid_frequency": registers.InverterEquipmentRegister.GridFrequency,
+    },
+}
+_AUXILIARY_DATA_RANGES = (
+    {
+        "start": 30075,
+        "end": 30076,
+        "registers": {
+            "/Ac/MaxPower": registers.InverterEquipmentRegister.MaximumActivePower,
+        },
+    },
+    {
+        "start": 32106,
+        "end": 32107,
+        "registers": {
+            "_energy_forward": (
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield
+            ),
+        },
+    },
+    {
+        "start": 32114,
+        "end": 32115,
+        "registers": {
+            "_daily_energy_legacy": (
+                registers.InverterEquipmentRegister.DailyEnergyYield
+            ),
+        },
+    },
+    {
+        "start": 40562,
+        "end": 40563,
+        "registers": {
+            "_daily_energy_realtime": (
+                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+            ),
+        },
+    },
+)
 _STATIC_DATA_SPECS = (
     {
         "name": "Model",
@@ -131,6 +184,18 @@ def _clean_static_string(value, default):
     return normalized or default
 
 
+def _decode_range_register(payload, start_address, register):
+    offset = (register.value.address - start_address) * 2
+    length = register.value.quantity * 2
+    raw_value = datatypes.decode(
+        payload[offset : offset + length],
+        register.value.data_type,
+    )
+    if register.value.gain is None:
+        return raw_value
+    return raw_value / register.value.gain
+
+
 state1Readable = {
     1: "standby",
     2: "grid connected",
@@ -191,6 +256,40 @@ class ModbusDataCollector2000Delux:
         else:
             self._phase_divisor = 1
 
+    def _read_range_group(self, group):
+        try:
+            payload = self.invSun2000.read_range(
+                group["start"],
+                end_address=group["end"],
+            )
+        except Exception as err:
+            LOG.debug(
+                "Batch read %s-%s unavailable, falling back to single reads: %s",
+                group["start"],
+                group["end"],
+                err,
+            )
+            return {}
+
+        values = {}
+        for key, register in group["registers"].items():
+            try:
+                values[key] = _decode_range_register(payload, group["start"], register)
+            except Exception as err:
+                LOG.warning(
+                    "Could not decode %s from batch %s-%s: %s",
+                    key,
+                    group["start"],
+                    group["end"],
+                    err,
+                )
+        return values
+
+    def _read_register_value(self, key, register, batch_values):
+        if key in batch_values:
+            return batch_values[key]
+        return self.invSun2000.read(register)
+
     def getData(self):
         # The connect() method internally checks whether there's already a connection
         if not self.invSun2000.connect():
@@ -198,9 +297,12 @@ class ModbusDataCollector2000Delux:
             return None
 
         data = {}
+        batch_values = self._read_range_group(_MAIN_DATA_RANGE)
+        for group in _AUXILIARY_DATA_RANGES:
+            batch_values.update(self._read_range_group(group))
 
         for path, spec in DIRECT_REGISTER_METRICS.items():
-            raw = self.invSun2000.read(spec["register"])
+            raw = self._read_register_value(path, spec["register"], batch_values)
             data[path] = safe_float(raw, spec["initial"])
 
         # state1 is read but not used
@@ -212,8 +314,10 @@ class ModbusDataCollector2000Delux:
 
         # data['/Ac/StatusCode'] = statuscode
 
-        energy_forward_raw = self.invSun2000.read(
-            registers.InverterEquipmentRegister.AccumulatedEnergyYield
+        energy_forward_raw = self._read_register_value(
+            "_energy_forward",
+            registers.InverterEquipmentRegister.AccumulatedEnergyYield,
+            batch_values,
         )
         energy_forward = safe_float(energy_forward_raw, 0.0)
         data["/Ac/Energy/Forward"] = energy_forward
@@ -237,7 +341,17 @@ class ModbusDataCollector2000Delux:
         last_error = None
         for candidate in daily_registers:
             try:
-                daily_yield_raw = self.invSun2000.read(candidate)
+                batch_key = (
+                    "_daily_energy_realtime"
+                    if candidate
+                    == registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+                    else "_daily_energy_legacy"
+                )
+                daily_yield_raw = self._read_register_value(
+                    batch_key,
+                    candidate,
+                    batch_values,
+                )
             except Exception as err:  # pragma: no cover - depends on hardware
                 last_error = err
                 continue
@@ -292,7 +406,11 @@ class ModbusDataCollector2000Delux:
             data["/Ac/Current"] = None
 
         freq = safe_float(
-            self.invSun2000.read(registers.InverterEquipmentRegister.GridFrequency),
+            self._read_register_value(
+                "_grid_frequency",
+                registers.InverterEquipmentRegister.GridFrequency,
+                batch_values,
+            ),
             None,
         )
         data["/Ac/L1/Frequency"] = freq
@@ -300,7 +418,11 @@ class ModbusDataCollector2000Delux:
         data["/Ac/L3/Frequency"] = freq
 
         cosphi = safe_float(
-            self.invSun2000.read(registers.InverterEquipmentRegister.PowerFactor)
+            self._read_register_value(
+                "_power_factor",
+                registers.InverterEquipmentRegister.PowerFactor,
+                batch_values,
+            )
         )
         data["/Ac/L1/Power"] = (
             cosphi
