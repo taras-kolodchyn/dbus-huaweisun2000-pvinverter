@@ -14,9 +14,13 @@ driver_root="$WORKSPACE_ROOT"
 service_command=(python3 -m dbus_huaweisun2000_pvinverter)
 settings_pythonpath=
 original_qml_hash=
+original_gui_v2_pvinverter_hash=
+original_gui_v2_solar_input_list_hash=
 install_completed=0
 SIM_PID=
 qml_settings_file=/opt/victronenergy/gui/qml/PageSettingsFronius.qml
+gui_v2_pvinverter_file=/opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
+gui_v2_solar_input_list_file=/opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 
 find_git_dir() {
   local dotgit=$1/.git
@@ -107,11 +111,38 @@ then
 fi
 
 prepare_install_layout() {
-  mkdir -p /opt/victronenergy/gui/qml
+  mkdir -p \
+    /opt/victronenergy/gui/qml \
+    /opt/victronenergy/gui-v2/Victron/VenusOS/data/common \
+    /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar
   if [ ! -f "$qml_settings_file" ]; then
     cat >"$qml_settings_file" <<'EOF'
 MbPage {
     model: VisibleItemModel
+}
+EOF
+  fi
+
+  if [ ! -f "$gui_v2_pvinverter_file" ]; then
+    cat >"$gui_v2_pvinverter_file" <<'EOF'
+Device {
+    readonly property real current: pvInverter.phases.singlePhaseCurrent
+    readonly property real voltage: pvInverter.phases.singlePhaseVoltage
+}
+EOF
+  fi
+
+  if [ ! -f "$gui_v2_solar_input_list_file" ]; then
+    cat >"$gui_v2_solar_input_list_file" <<'EOF'
+Page {
+    GradientListView {
+        delegate: ListQuantityGroupNavigation {
+            quantityModel: QuantityObjectModel {
+                QuantityObject { object: solarInputDelegate; key: "voltage" }
+                QuantityObject { object: solarInputDelegate; key: "current" }
+            }
+        }
+    }
 }
 EOF
   fi
@@ -141,6 +172,8 @@ if [ "$USE_INSTALL_SH" = "1" ]; then
   service_command=("$INSTALL_ROOT/service/run")
   settings_pythonpath="$INSTALL_ROOT/src"
   original_qml_hash=$(sha256sum "$qml_settings_file" | awk '{print $1}')
+  original_gui_v2_pvinverter_hash=$(sha256sum "$gui_v2_pvinverter_file" | awk '{print $1}')
+  original_gui_v2_solar_input_list_hash=$(sha256sum "$gui_v2_solar_input_list_file" | awk '{print $1}')
 fi
 
 cd "$driver_root"
@@ -162,7 +195,11 @@ cleanup() {
     if [ "$USE_INSTALL_SH" = "1" ] && [ "$install_completed" = "1" ] && [ -f "$driver_root/uninstall.sh" ]; then
         (cd "$driver_root" && bash uninstall.sh)
         restored_qml_hash=$(sha256sum "$qml_settings_file" | awk '{print $1}')
+        restored_gui_v2_pvinverter_hash=$(sha256sum "$gui_v2_pvinverter_file" | awk '{print $1}')
+        restored_gui_v2_solar_input_list_hash=$(sha256sum "$gui_v2_solar_input_list_file" | awk '{print $1}')
         test "$restored_qml_hash" = "$original_qml_hash"
+        test "$restored_gui_v2_pvinverter_hash" = "$original_gui_v2_pvinverter_hash"
+        test "$restored_gui_v2_solar_input_list_hash" = "$original_gui_v2_solar_input_list_hash"
         test ! -e /service/dbus-huaweisun2000-pvinverter
     fi
 
@@ -203,6 +240,8 @@ if [ "$USE_INSTALL_SH" = "1" ]; then
   test -L /service/dbus-huaweisun2000-pvinverter
   test -f /opt/victronenergy/gui/qml/PageSettingsHuaweiSUN2000.qml
   grep -q "// dbus-huaweisun2000 start" "$qml_settings_file"
+  grep -q "_acVoltage" "$gui_v2_pvinverter_file"
+  grep -q "displayVoltage" "$gui_v2_solar_input_list_file"
   install_completed=1
 fi
 

@@ -5,6 +5,8 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 SERVICE_NAME=$(basename "$SCRIPT_DIR")
 RC_LOCAL="/data/rc.local"
 GUI_QML_DIR="/opt/victronenergy/gui/qml"
+GUI_V2_DIR="/opt/victronenergy/gui-v2"
+GUI_V2_OVERLAY_DIR="$SCRIPT_DIR/gui-v2"
 INVERTERS_SETTINGS_FILE="$GUI_QML_DIR/PageSettingsFronius.qml"
 CUSTOM_SETTINGS_FILE="$GUI_QML_DIR/PageSettingsHuaweiSUN2000.qml"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
@@ -25,6 +27,34 @@ stop_supervised_service() {
 cleanup_supervise_dirs() {
     local service_root=$1
     rm -rf "$service_root/supervise" "$service_root/log/supervise"
+}
+
+restore_overlay_tree() {
+    local source_root=$1
+    local target_root=$2
+    local backup_root=$3
+    local source
+    local relative_path
+    local target_path
+    local backup_path
+
+    if [ ! -d "$source_root" ]; then
+        return
+    fi
+
+    find "$source_root" -type f | while read -r source; do
+        relative_path=${source#"$source_root"/}
+        target_path="$target_root/$relative_path"
+        backup_path="$backup_root/$relative_path.orig"
+
+        if [ -f "$backup_path" ]; then
+            echo "Restoring $target_path from $backup_path"
+            cp "$backup_path" "$target_path"
+            rm -f "$backup_path"
+        else
+            rm -f "$target_path"
+        fi
+    done
 }
 
 stop_matching_processes() {
@@ -76,6 +106,8 @@ else
 fi
 
 rm -f "$CUSTOM_SETTINGS_FILE"
+restore_overlay_tree "$GUI_V2_OVERLAY_DIR" "$GUI_V2_DIR" "$BACKUP_DIR/gui-v2"
+find "$BACKUP_DIR/gui-v2" -depth -type d -empty -delete 2>/dev/null || true
 
 if [ -e /service/start-gui ]; then
     svc -t /service/start-gui || true

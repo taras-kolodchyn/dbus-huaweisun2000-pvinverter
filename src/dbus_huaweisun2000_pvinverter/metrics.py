@@ -43,6 +43,7 @@ DIRECT_REGISTER_METRICS = {
 }
 
 DERIVED_SERVICE_METRICS = {
+    "/Ac/NumberOfPhases": _metric(0, formatter="n"),
     "/Ac/Current": _metric(0, formatter="a"),
     "/Ac/Voltage": _metric(0, formatter="v"),
     "/Ac/Energy/Forward": _metric(None, formatter="kwh"),

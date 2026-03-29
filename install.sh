@@ -5,6 +5,8 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 SERVICE_NAME=$(basename "$SCRIPT_DIR")
 RC_LOCAL="/data/rc.local"
 GUI_QML_DIR="/opt/victronenergy/gui/qml"
+GUI_V2_DIR="/opt/victronenergy/gui-v2"
+GUI_V2_OVERLAY_DIR="$SCRIPT_DIR/gui-v2"
 INVERTERS_SETTINGS_FILE="$GUI_QML_DIR/PageSettingsFronius.qml"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
 BACKUP_FILE="$BACKUP_DIR/PageSettingsFronius.qml.orig"
@@ -24,6 +26,34 @@ stop_service() {
 cleanup_supervise_dirs() {
     local service_root=$1
     rm -rf "$service_root/supervise" "$service_root/log/supervise"
+}
+
+install_overlay_tree() {
+    local source_root=$1
+    local target_root=$2
+    local backup_root=$3
+    local source
+    local relative_path
+    local target_path
+    local backup_path
+
+    if [ ! -d "$source_root" ] || [ ! -d "$target_root" ]; then
+        return
+    fi
+
+    find "$source_root" -type f | while read -r source; do
+        relative_path=${source#"$source_root"/}
+        target_path="$target_root/$relative_path"
+        backup_path="$backup_root/$relative_path.orig"
+
+        mkdir -p "$(dirname "$target_path")" "$(dirname "$backup_path")"
+        if [ -f "$target_path" ] && [ ! -f "$backup_path" ]; then
+            echo "INFO: Backing up $target_path to $backup_path"
+            cp "$target_path" "$backup_path"
+        fi
+        echo "INFO: Installing overlay $source -> $target_path"
+        cp "$source" "$target_path"
+    done
 }
 
 echo "SCRIPT_DIR: $SCRIPT_DIR"
@@ -64,6 +94,7 @@ echo "INFO: Inserting Huawei SUN2000 menu entry into $INVERTERS_SETTINGS_FILE"
 sed -i "/model: VisibleItemModel/ r $SCRIPT_DIR/gui/menu_item.txt" "$INVERTERS_SETTINGS_FILE"
 
 cp -av "$SCRIPT_DIR"/gui/*.qml "$GUI_QML_DIR/"
+install_overlay_tree "$GUI_V2_OVERLAY_DIR" "$GUI_V2_DIR" "$BACKUP_DIR/gui-v2"
 
 svc -u "/service/$SERVICE_NAME/log" 2>/dev/null || true
 svc -u "/service/$SERVICE_NAME" 2>/dev/null || true

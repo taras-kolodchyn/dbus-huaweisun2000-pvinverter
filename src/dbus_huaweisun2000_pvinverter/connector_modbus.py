@@ -562,6 +562,8 @@ class ModbusDataCollector2000Delux:
                 data["/Ac/L2/Energy/Today"] = 0.0
                 data["/Ac/L3/Energy/Today"] = 0.0
 
+        data["/Ac/NumberOfPhases"] = self._phase_divisor
+
         if self._phase_divisor == 1:
             data["/Ac/Voltage"] = safe_float(data.get("/Ac/L1/Voltage"), None)
         else:
