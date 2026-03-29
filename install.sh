@@ -4,12 +4,9 @@ set -eu
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 SERVICE_NAME=$(basename "$SCRIPT_DIR")
 RC_LOCAL="/data/rc.local"
-GUI_QML_DIR="/opt/victronenergy/gui/qml"
 GUI_V2_DIR="/opt/victronenergy/gui-v2"
 GUI_V2_OVERLAY_DIR="$SCRIPT_DIR/gui-v2"
-INVERTERS_SETTINGS_FILE="$GUI_QML_DIR/PageSettingsFronius.qml"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
-BACKUP_FILE="$BACKUP_DIR/PageSettingsFronius.qml.orig"
 
 stop_service() {
     local service_path=$1
@@ -69,7 +66,7 @@ if [ -L "/service/$SERVICE_NAME" ]; then
 fi
 cleanup_supervise_dirs "$SCRIPT_DIR/service"
 
-chmod 744 "$SCRIPT_DIR/restart.sh" "$SCRIPT_DIR/uninstall.sh"
+chmod 744 "$SCRIPT_DIR/restart.sh" "$SCRIPT_DIR/uninstall.sh" "$SCRIPT_DIR/configure.sh"
 chmod 755 "$SCRIPT_DIR/service/run" "$SCRIPT_DIR/service/log/run"
 
 ln -sfn "$SCRIPT_DIR/service" "/service/$SERVICE_NAME"
@@ -84,16 +81,6 @@ fi
 grep -qxF "$SCRIPT_DIR/install.sh" "$RC_LOCAL" || echo "$SCRIPT_DIR/install.sh" >> "$RC_LOCAL"
 
 mkdir -p "$BACKUP_DIR"
-if ! grep -q "dbus-huaweisun2000 start" "$INVERTERS_SETTINGS_FILE"; then
-    echo "INFO: Saving original $INVERTERS_SETTINGS_FILE to $BACKUP_FILE"
-    cp "$INVERTERS_SETTINGS_FILE" "$BACKUP_FILE"
-fi
-
-sed -i '/\/\/ dbus-huaweisun2000 start/,/\/\/ dbus-huaweisun2000 end/d' "$INVERTERS_SETTINGS_FILE"
-echo "INFO: Inserting Huawei SUN2000 menu entry into $INVERTERS_SETTINGS_FILE"
-sed -i "/model: VisibleItemModel/ r $SCRIPT_DIR/gui/menu_item.txt" "$INVERTERS_SETTINGS_FILE"
-
-cp -av "$SCRIPT_DIR"/gui/*.qml "$GUI_QML_DIR/"
 install_overlay_tree "$GUI_V2_OVERLAY_DIR" "$GUI_V2_DIR" "$BACKUP_DIR/gui-v2"
 
 svc -u "/service/$SERVICE_NAME/log" 2>/dev/null || true

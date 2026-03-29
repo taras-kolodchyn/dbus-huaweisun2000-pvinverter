@@ -31,7 +31,6 @@ Page {
             required property real current
 
             readonly property bool _usePvInverterAcFallback: serviceType === "pvinverter"
-                    && (isNaN(voltage) || isNaN(current))
             readonly property real displayVoltage: _usePvInverterAcFallback && _acVoltage.valid
                     ? _acVoltage.value
                     : voltage

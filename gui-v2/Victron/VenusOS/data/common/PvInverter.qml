@@ -14,12 +14,12 @@ Device {
 
     readonly property real energy: _energy.valid ? _energy.value : NaN
     readonly property real power: _power.valid ? _power.value : NaN
-    readonly property real current: !isNaN(pvInverter.phases.singlePhaseCurrent)
-            ? pvInverter.phases.singlePhaseCurrent
-            : (_acCurrent.valid ? _acCurrent.value : NaN)
-    readonly property real voltage: !isNaN(pvInverter.phases.singlePhaseVoltage)
-            ? pvInverter.phases.singlePhaseVoltage
-            : (_acVoltage.valid ? _acVoltage.value : NaN)
+    readonly property real current: _acCurrent.valid
+            ? _acCurrent.value
+            : pvInverter.phases.singlePhaseCurrent
+    readonly property real voltage: _acVoltage.valid
+            ? _acVoltage.value
+            : pvInverter.phases.singlePhaseVoltage
 
     readonly property PhaseModel phases: PhaseModel {
         function updateCount(maxPhaseCount) {

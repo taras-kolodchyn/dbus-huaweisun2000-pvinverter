@@ -1,0 +1,159 @@
+diff --git a/data/common/PvInverter.qml b/data/common/PvInverter.qml
+index 0e44e7e..7e26b2c 100644
+--- a/data/common/PvInverter.qml
++++ b/data/common/PvInverter.qml
+@@ -14,8 +14,12 @@ Device {
+ 
+ 	readonly property real energy: _energy.valid ? _energy.value : NaN
+ 	readonly property real power: _power.valid ? _power.value : NaN
+-	readonly property real current: pvInverter.phases.singlePhaseCurrent
+-	readonly property real voltage: pvInverter.phases.singlePhaseVoltage
++	readonly property real current: _acCurrent.valid
++			? _acCurrent.value
++			: pvInverter.phases.singlePhaseCurrent
++	readonly property real voltage: _acVoltage.valid
++			? _acVoltage.value
++			: pvInverter.phases.singlePhaseVoltage
+ 
+ 	readonly property PhaseModel phases: PhaseModel {
+ 		function updateCount(maxPhaseCount) {
+@@ -84,4 +88,12 @@ Device {
+ 	readonly property VeQuickItem _power: VeQuickItem {
+ 		uid: pvInverter.serviceUid + "/Ac/Power"
+ 	}
++
++	readonly property VeQuickItem _acCurrent: VeQuickItem {
++		uid: pvInverter.serviceUid + "/Ac/Current"
++	}
++
++	readonly property VeQuickItem _acVoltage: VeQuickItem {
++		uid: pvInverter.serviceUid + "/Ac/Voltage"
++	}
+ }
+diff --git a/src/solarinput.cpp b/src/solarinput.cpp
+index 8d35269..1702cfc 100644
+--- a/src/solarinput.cpp
++++ b/src/solarinput.cpp
+@@ -261,6 +261,20 @@ PvInverterSolarInput::PvInverterSolarInput(Device *device, QObject *parent)
+ 			setPower(m_powerItem->getValue());
+ 			connect(m_powerItem, &VeQItem::valueChanged, this, &PvInverterSolarInput::setPower);
+ 		}
++
++		m_summaryCurrentItem = serviceItem->itemGetOrCreate(QStringLiteral("Ac/Current"));
++		if (m_summaryCurrentItem) {
++			connect(m_summaryCurrentItem, &VeQItem::valueChanged, this, [this](const QVariant &) {
++				updateSinglePhaseValues();
++			});
++		}
++
++		m_summaryVoltageItem = serviceItem->itemGetOrCreate(QStringLiteral("Ac/Voltage"));
++		if (m_summaryVoltageItem) {
++			connect(m_summaryVoltageItem, &VeQItem::valueChanged, this, [this](const QVariant &) {
++				updateSinglePhaseValues();
++			});
++		}
+ 	}
+ 
+ 	setName(device->name());
+@@ -352,6 +366,20 @@ void PvInverterSolarInput::updateSinglePhaseValues()
+ 		}
+ 	}
+ 
++	if (qIsNaN(singlePhaseCurrent) && m_summaryCurrentItem) {
++		const QVariant summaryCurrent = m_summaryCurrentItem->getValue();
++		if (summaryCurrent.isValid()) {
++			singlePhaseCurrent = summaryCurrent.value<qreal>();
++		}
++	}
++
++	if (qIsNaN(singlePhaseVoltage) && m_summaryVoltageItem) {
++		const QVariant summaryVoltage = m_summaryVoltageItem->getValue();
++		if (summaryVoltage.isValid()) {
++			singlePhaseVoltage = summaryVoltage.value<qreal>();
++		}
++	}
++
+ 	setCurrent(singlePhaseCurrent);
+ 	setVoltage(singlePhaseVoltage);
+ }
+diff --git a/src/solarinput.h b/src/solarinput.h
+index be87b0d..8228d09 100644
+--- a/src/solarinput.h
++++ b/src/solarinput.h
+@@ -135,6 +135,8 @@ private:
+ 
+ 	QPointer<VeQItem> m_acItem;
+ 	QPointer<VeQItem> m_powerItem;
++	QPointer<VeQItem> m_summaryCurrentItem;
++	QPointer<VeQItem> m_summaryVoltageItem;
+ 	QMap<QString, AcPhase> m_phases;
+ 	Device *m_device = nullptr;
+ };
+diff --git a/tests/solarinputmodel/tst_solarinputmodel.qml b/tests/solarinputmodel/tst_solarinputmodel.qml
+index 4933b1e..91ede26 100644
+--- a/tests/solarinputmodel/tst_solarinputmodel.qml
++++ b/tests/solarinputmodel/tst_solarinputmodel.qml
+@@ -550,6 +550,63 @@ TestCase {
+ 					}
+ 				],
+ 			},
++			{
++				tag: "pvinverter - multi phase with ac summary fallback",
++				devices: [
++					{
++						uid: "mock/com.victronenergy.pvinverter.a",
++						children: {
++							"Ac/Power": 500,
++							"Ac/Voltage": 230,
++							"Ac/Current": 2.2,
++							"Ac/L1/Voltage": 225,
++							"Ac/L1/Current": 0.7,
++							"Ac/L2/Voltage": 228,
++							"Ac/L2/Current": 0.7,
++							"Ac/L3/Voltage": 231,
++							"Ac/L3/Current": 0.8,
++							DeviceInstance: 0,
++							ProductName: "pvinverter_product",
++						},
++					}
++				],
++				expectedData: [
++					{
++						serviceUid: "mock/com.victronenergy.pvinverter.a",
++						serviceType: "pvinverter",
++						group: "pvinverter",
++						enabled: true,
++						name: "pvinverter_product",
++						todaysYield: NaN,
++						power: 500,
++						current: 2.2,
++						voltage: 230,
++					}
++				],
++				updatedDevices: [
++					{
++						uid: "mock/com.victronenergy.pvinverter.a",
++						children: {
++							"Ac/Power": 540,
++							"Ac/Voltage": 231,
++							"Ac/Current": 2.3,
++						},
++					}
++				],
++				updatedExpectedData: [
++					{
++						serviceUid: "mock/com.victronenergy.pvinverter.a",
++						serviceType: "pvinverter",
++						group: "pvinverter",
++						enabled: true,
++						name: "pvinverter_product",
++						todaysYield: NaN,
++						power: 540,
++						current: 2.3,
++						voltage: 231,
++					}
++				],
++			},
+ 		]
+ 	}
+ 

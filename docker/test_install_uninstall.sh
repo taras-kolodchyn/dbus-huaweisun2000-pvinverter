@@ -22,15 +22,36 @@ exit 0
 EOF
 chmod +x /usr/local/bin/svc
 
-mkdir -p /service /data /opt/victronenergy/gui/qml /opt/victronenergy/gui-v2/Victron/VenusOS/data/common /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar /var/log/dbus-huaweisun2000
+cat >/usr/local/bin/dbus <<'"'"'EOF'"'"'
+#!/bin/sh
+printf "%s\n" "$*" >> /tmp/dbus.log
+case "$4" in
+  GetValue)
+    case "$3" in
+      /Settings/HuaweiSUN2000/ModbusHost) echo "'192.0.2.10'" ;;
+      /Settings/HuaweiSUN2000/ModbusPort) echo "1502" ;;
+      /Settings/HuaweiSUN2000/ModbusUnit) echo "3" ;;
+      /Settings/HuaweiSUN2000/PhaseTypeOverride) echo "'three-phase'" ;;
+      /Settings/HuaweiSUN2000/CustomName) echo "'Huawei Test'" ;;
+      /Settings/HuaweiSUN2000/Position) echo "2" ;;
+      /Settings/HuaweiSUN2000/UpdateTimeMS) echo "1000" ;;
+      /Settings/HuaweiSUN2000/PowerCorrectionFactor) echo "1.0" ;;
+      *) echo "0" ;;
+    esac
+    ;;
+  SetValue)
+    echo "0"
+    ;;
+  *)
+    echo "0"
+    ;;
+esac
+EOF
+chmod +x /usr/local/bin/dbus
+
+mkdir -p /service /data /opt/victronenergy/gui-v2/Victron/VenusOS/data/common /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar /var/log/dbus-huaweisun2000
 touch /service/start-gui
 printf "preserve-me\n" >/var/log/dbus-huaweisun2000/lock
-
-cat >/opt/victronenergy/gui/qml/PageSettingsFronius.qml <<'"'"'EOF'"'"'
-MbPage {
-    model: VisibleItemModel
-}
-EOF
 
 cat >/opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml <<'"'"'EOF'"'"'
 Device {
@@ -57,18 +78,24 @@ cd /data/dbus-huaweisun2000-pvinverter
 mkdir -p service/supervise service/log/supervise
 touch service/supervise/stale service/log/supervise/stale
 
-original_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")
 original_gui_v2_pvinverter_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml | awk "{print \$1}")
 original_gui_v2_solar_list_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml | awk "{print \$1}")
+
+bash configure.sh --host 192.0.2.10 --port 1502 --unit 3 --position 2 --custom-name "Huawei Test" --phase-type three-phase --update-ms 1000 --power-correction 1.0 >/tmp/configure.log
+grep -q "/Settings/HuaweiSUN2000/ModbusHost SetValue 192.0.2.10" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/ModbusPort SetValue 1502" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/ModbusUnit SetValue 3" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/Position SetValue 2" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/CustomName SetValue Huawei Test" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/PhaseTypeOverride SetValue three-phase" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/UpdateTimeMS SetValue 1000" /tmp/dbus.log
+grep -q "/Settings/HuaweiSUN2000/PowerCorrectionFactor SetValue 1.0" /tmp/dbus.log
 
 bash install.sh
 
 test -L /service/dbus-huaweisun2000-pvinverter
 test "$(readlink /service/dbus-huaweisun2000-pvinverter)" = "/data/dbus-huaweisun2000-pvinverter/service"
 grep -qxF "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
-grep -q "// dbus-huaweisun2000 start" /opt/victronenergy/gui/qml/PageSettingsFronius.qml
-test -f /opt/victronenergy/gui/qml/PageSettingsHuaweiSUN2000.qml
-test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/PageSettingsFronius.qml.orig
 test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/gui-v2/Victron/VenusOS/data/common/PvInverter.qml.orig
 test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml.orig
 grep -q "_acVoltage" /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
@@ -78,18 +105,12 @@ test ! -e /data/dbus-huaweisun2000-pvinverter/service/supervise
 test ! -e /data/dbus-huaweisun2000-pvinverter/service/log/supervise
 grep -q -- "-t /service/start-gui" /tmp/svc.log
 
-modified_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")
-test "$modified_hash" != "$original_hash"
-
 : >/tmp/svc.log
 bash uninstall.sh
 
 test ! -e /service/dbus-huaweisun2000-pvinverter
 ! grep -q "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
-test ! -f /opt/victronenergy/gui/qml/PageSettingsHuaweiSUN2000.qml
 grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
-restored_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")
-test "$restored_hash" = "$original_hash"
 restored_gui_v2_pvinverter_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml | awk "{print \$1}")
 restored_gui_v2_solar_list_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml | awk "{print \$1}")
 test "$restored_gui_v2_pvinverter_hash" = "$original_gui_v2_pvinverter_hash"
