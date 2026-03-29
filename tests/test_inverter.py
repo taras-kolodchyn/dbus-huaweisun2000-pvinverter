@@ -279,6 +279,50 @@ def test_read_raw_value_single_retry_override_skips_reconnect(monkeypatch):
     assert clients[0].read_calls == [(123, 1, inverter.modbus_unit)]
 
 
+def test_read_raw_value_fast_retry_skips_retry_and_post_connect_delay(monkeypatch):
+    payload = datatypes.encode(42, datatypes.DataType.UINT16_BE)
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[
+            Raised(FakeConnectionException("Connection unexpectedly closed")),
+            FakeResponse(payload),
+        ],
+    )
+    sleep_calls = []
+    monkeypatch.setattr(inv.time, "sleep", sleep_calls.append)
+    inverter = inv.Sun2000("inverter.local", wait=2, retry_delay=1, retries=2)
+    clients[0]._open = True
+
+    value = inverter.read_raw_value(make_register(address=32080))
+
+    assert value == 42
+    assert sleep_calls == []
+    assert clients[0].close_calls == 1
+    assert clients[0].connect_calls == 1
+
+
+def test_read_raw_value_generic_retry_keeps_backoff_and_post_connect_delay(monkeypatch):
+    payload = datatypes.encode(42, datatypes.DataType.UINT16_BE)
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[
+            Raised(FakeConnectionException("timeout")),
+            FakeResponse(payload),
+        ],
+    )
+    sleep_calls = []
+    monkeypatch.setattr(inv.time, "sleep", sleep_calls.append)
+    inverter = inv.Sun2000("inverter.local", wait=2, retry_delay=1, retries=2)
+    clients[0]._open = True
+
+    value = inverter.read_raw_value(make_register(address=32080))
+
+    assert value == 42
+    assert sleep_calls == [1.0, 2.0]
+    assert clients[0].close_calls == 1
+    assert clients[0].connect_calls == 1
+
+
 def test_read_raw_value_raises_unsupported_register_without_retry(monkeypatch):
     clients = install_fake_client(
         monkeypatch,
@@ -354,6 +398,52 @@ def test_read_range_single_retry_override_skips_reconnect(monkeypatch):
     assert clients[0].close_calls == 0
     assert clients[0].connect_calls == 0
     assert clients[0].read_calls == [(40000, 3, inverter.modbus_unit)]
+
+
+def test_read_range_fast_retry_skips_retry_and_post_connect_delay(monkeypatch):
+    payload = b"\x00\x01\x00\x02\x00\x03"
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[
+            Raised(
+                FakeConnectionException("No Response received from the remote unit")
+            ),
+            FakeResponse(payload),
+        ],
+    )
+    sleep_calls = []
+    monkeypatch.setattr(inv.time, "sleep", sleep_calls.append)
+    inverter = inv.Sun2000("inverter.local", wait=2, retry_delay=1, retries=2)
+    clients[0]._open = True
+
+    result = inverter.read_range(40000, end_address=40002)
+
+    assert result == payload
+    assert sleep_calls == []
+    assert clients[0].close_calls == 1
+    assert clients[0].connect_calls == 1
+
+
+def test_read_range_generic_retry_keeps_backoff_and_post_connect_delay(monkeypatch):
+    payload = b"\x00\x01\x00\x02\x00\x03"
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[
+            Raised(FakeConnectionException("timeout")),
+            FakeResponse(payload),
+        ],
+    )
+    sleep_calls = []
+    monkeypatch.setattr(inv.time, "sleep", sleep_calls.append)
+    inverter = inv.Sun2000("inverter.local", wait=2, retry_delay=1, retries=2)
+    clients[0]._open = True
+
+    result = inverter.read_range(40000, end_address=40002)
+
+    assert result == payload
+    assert sleep_calls == [1.0, 2.0]
+    assert clients[0].close_calls == 1
+    assert clients[0].connect_calls == 1
 
 
 def test_read_range_raises_unsupported_register_without_retry(monkeypatch):
