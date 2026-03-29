@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Prepare toolcache for act
         if: ${{ env.ACT }}
@@ -68,6 +70,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -87,14 +91,50 @@ jobs:
         run: |
           echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
 
+      - name: Verify package version matches git tag
+        run: |
+          python - <<'PY'
+          import os
+          from importlib.metadata import version
+
+          expected = os.environ["VERSION"]
+          actual = version("dbus-huaweisun2000-pvinverter")
+          if actual != expected:
+              raise SystemExit(
+                  f"Package version {actual!r} does not match release tag {expected!r}"
+              )
+          PY
+
       - name: Create Release ZIP
         run: |
           ARCHIVE_NAME="dbus-huaweisun2000-pvinverter-v${VERSION}.zip"
+          LATEST_ARCHIVE_NAME="dbus-huaweisun2000-pvinverter.zip"
           git ls-files -z | grep -vz '\.zip$' | xargs -0 zip -qr "$ARCHIVE_NAME"
+          cp "$ARCHIVE_NAME" "$LATEST_ARCHIVE_NAME"
 
       - name: Create GitHub Release and Upload Asset
         uses: softprops/action-gh-release@v1
         with:
-          files: dbus-huaweisun2000-pvinverter-v${{ env.VERSION }}.zip
+          files: |
+            dbus-huaweisun2000-pvinverter-v${{ env.VERSION }}.zip
+            dbus-huaweisun2000-pvinverter.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release download links
+        run: |
+          VERSIONED_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/dbus-huaweisun2000-pvinverter-v${VERSION}.zip"
+          LATEST_URL="https://github.com/${{ github.repository }}/releases/latest/download/dbus-huaweisun2000-pvinverter.zip"
+          for url in "$VERSIONED_URL" "$LATEST_URL"; do
+            for attempt in 1 2 3 4 5; do
+              status=$(curl -L -o /dev/null -s -w '%{http_code}' "$url")
+              if [ "$status" = "200" ]; then
+                break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "Download URL failed: $url (status $status)"
+                exit 1
+              fi
+              sleep 3
+            done
+          done

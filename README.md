@@ -66,8 +66,9 @@ Get detailed monitoring, energy analytics, and remote diagnostics — all in one
 
 ```bash
 cd /data
-wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases/download/v1.1.0/dbus-huaweisun2000-pvinverter-v1.1.0.zip
-unzip dbus-huaweisun2000-pvinverter-v1.1.0.zip -d dbus-huaweisun2000-pvinverter
+wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases/latest/download/dbus-huaweisun2000-pvinverter.zip -O dbus-huaweisun2000-pvinverter.zip || \
+  wget https://github.com/taras-kolodchyn/dbus-huaweisun2000-pvinverter/releases/download/v1.1.0/dbus-huaweisun2000-pvinverter-v1.1.0.zip -O dbus-huaweisun2000-pvinverter.zip
+unzip dbus-huaweisun2000-pvinverter.zip -d dbus-huaweisun2000-pvinverter
 cd dbus-huaweisun2000-pvinverter
 chmod +x install.sh
 sh install.sh
