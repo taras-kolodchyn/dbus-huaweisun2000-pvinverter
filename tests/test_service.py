@@ -118,6 +118,8 @@ config = types.SimpleNamespace(
     ADAPTIVE_POLLING_IDLE_INTERVAL_MULTIPLIER=5,
     ADAPTIVE_POLLING_IDLE_MIN_UPDATE_TIME_MS=5000,
     ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS=10000,
+    ADAPTIVE_POLLING_OFFLINE_MIN_UPDATE_TIME_MS=5000,
+    ADAPTIVE_POLLING_OFFLINE_MAX_UPDATE_TIME_MS=30000,
     UNCONFIGURED_MODBUS_HOSTS={"", "0.0.0.0", "255.255.255.255"},
 )
 sys.modules["dbus_huaweisun2000_pvinverter.config"] = config
@@ -499,6 +501,7 @@ def test_update_handles_none_data_and_disarms_connection():
     assert p["/Connected"] == 0
     assert p["/Status"].startswith("Update failed")
     assert svc._failure_count == 1
+    assert svc._polling_mode == "offline"
 
 
 def test_update_failure_logs_warning_with_backoff(caplog):
@@ -554,9 +557,46 @@ def test_update_failure_reschedules_with_exponential_backoff():
 
     assert spy.calls == [(1000, svc._update)]
     assert svc._update() is False
-    assert spy.calls[-1] == (1000, svc._update)
+    assert spy.calls[-1] == (5000, svc._update)
+    assert svc._polling_mode == "offline"
     assert svc._update() is False
-    assert spy.calls[-1] == (2000, svc._update)
+    assert spy.calls[-1] == (10000, svc._update)
+    assert svc._polling_mode == "offline"
+
+
+def test_update_success_recovers_from_offline_polling():
+    class FlakyConnector:
+        def __init__(self):
+            self.calls = 0
+
+        def getData(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+            return {"/Ac/Power": 200, "/Ac/Current": 1}
+
+    settings = FakeSettingsForService()
+    spy = SpyTimeout()
+    svc = m.DbusSun2000Service(
+        servicename="test.service",
+        settings=settings,
+        paths={
+            "/Ac/Power": {"initial": 0, "textformat": m._format_w},
+            "/Ac/Current": {"initial": 0, "textformat": m._format_a},
+        },
+        data_connector=FlakyConnector(),
+        service_factory=FakeService,
+        timeout_add=spy.add,
+    )
+
+    assert svc._update() is False
+    assert svc._polling_mode == "offline"
+    assert spy.calls[-1] == (5000, svc._update)
+
+    assert svc._update() is False
+    assert svc._polling_mode == "active"
+    assert svc._failure_count == 0
+    assert spy.calls[-1] == (1000, svc._update)
 
 
 def test_update_enters_idle_polling_after_consecutive_low_power_samples():

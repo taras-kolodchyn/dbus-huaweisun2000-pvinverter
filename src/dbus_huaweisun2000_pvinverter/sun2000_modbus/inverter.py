@@ -87,18 +87,32 @@ class Sun2000:
         self._host = host
         self._port = port
 
-    def connect(self):
+    @staticmethod
+    def _is_fast_retry_error(error):
+        message = str(error)
+        return (
+            "Connection unexpectedly closed" in message
+            or "No Response received from the remote unit" in message
+            or "Unable to decode response" in message
+        )
+
+    def connect(self, post_connect_delay=None):
         if self.isConnected():
             return True
 
+        effective_post_connect_delay = (
+            self._post_connect_delay
+            if post_connect_delay is None
+            else max(float(post_connect_delay), 0.0)
+        )
         self.inverter.connect()
         deadline = time.monotonic() + max(self._connect_timeout, 0)
         while not self.isConnected() and time.monotonic() < deadline:
             time.sleep(self._connect_poll_interval)
 
         if self.isConnected():
-            if self._post_connect_delay:
-                time.sleep(self._post_connect_delay)
+            if effective_post_connect_delay:
+                time.sleep(effective_post_connect_delay)
             LOG.info("Successfully connected to inverter %s:%s", self._host, self._port)
             return True
 
@@ -128,6 +142,16 @@ class Sun2000:
         effective_retries = self.retries if retries is None else retries
         effective_retry_delay = self.retry_delay if retry_delay is None else retry_delay
         return max(int(effective_retries), 1), max(float(effective_retry_delay), 0.0)
+
+    def _reconnect_for_retry(self, *, fast=False):
+        try:
+            self.disconnect()
+        except Exception as disconnect_ex:
+            LOG.warning("Error while disconnecting: %s", disconnect_ex)
+        try:
+            self.connect(post_connect_delay=0 if fast else None)
+        except Exception as connect_ex:
+            LOG.warning("Error while reconnecting: %s", connect_ex)
 
     def read_raw_value(self, register, retries=None, retry_delay=None):
         # Try to read the register value
@@ -166,17 +190,15 @@ class Sun2000:
                 attempt += 1
                 if attempt >= effective_retries:
                     break
-                if effective_retry_delay:
+                fast_retry = attempt == 1 and self._is_fast_retry_error(ex)
+                if fast_retry:
+                    LOG.debug(
+                        "Fast retrying register %s after transport error",
+                        register.value.address,
+                    )
+                elif effective_retry_delay:
                     time.sleep(effective_retry_delay)
-                # Try to reconnect before next attempt
-                try:
-                    self.disconnect()
-                except Exception as disconnect_ex:
-                    LOG.warning("Error while disconnecting: %s", disconnect_ex)
-                try:
-                    self.connect()
-                except Exception as connect_ex:
-                    LOG.warning("Error while reconnecting: %s", connect_ex)
+                self._reconnect_for_retry(fast=fast_retry)
         # All retries failed, raise the last exception
         LOG.critical("All retries to read register failed")
         raise (
@@ -265,17 +287,16 @@ class Sun2000:
                 attempt += 1
                 if attempt >= effective_retries:
                     break
-                if effective_retry_delay:
+                fast_retry = attempt == 1 and self._is_fast_retry_error(ex)
+                if fast_retry:
+                    LOG.debug(
+                        "Fast retrying range %s-%s after transport error",
+                        start_address,
+                        start_address + quantity - 1,
+                    )
+                elif effective_retry_delay:
                     time.sleep(effective_retry_delay)
-                # Try to reconnect before next attempt
-                try:
-                    self.disconnect()
-                except Exception as disconnect_ex:
-                    LOG.warning("Error while disconnecting: %s", disconnect_ex)
-                try:
-                    self.connect()
-                except Exception as connect_ex:
-                    LOG.warning("Error while reconnecting: %s", connect_ex)
+                self._reconnect_for_retry(fast=fast_retry)
         # All retries failed, raise the last exception
         LOG.critical("All retries to read range of registers failed")
         raise (

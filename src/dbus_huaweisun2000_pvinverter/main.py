@@ -123,6 +123,14 @@ class DbusSun2000Service:
                 config.ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS,
             ),
         )
+        self._offline_min_update_interval_ms = max(
+            self._update_interval_ms,
+            config.ADAPTIVE_POLLING_OFFLINE_MIN_UPDATE_TIME_MS,
+        )
+        self._offline_max_update_interval_ms = max(
+            self._offline_min_update_interval_ms,
+            config.ADAPTIVE_POLLING_OFFLINE_MAX_UPDATE_TIME_MS,
+        )
         self._timeout_add = timeout_add
         self._failure_count = 0
         self._idle_cycle_count = 0
@@ -226,6 +234,13 @@ class DbusSun2000Service:
             delay_ms,
         )
 
+    def _resolve_offline_delay_ms(self) -> int:
+        return min(
+            self._offline_min_update_interval_ms
+            * (2 ** max(self._failure_count - 1, 0)),
+            self._offline_max_update_interval_ms,
+        )
+
     def _resolve_next_delay_ms(self, meter_data: Dict[str, object]) -> int:
         if self._is_idle_sample(meter_data):
             self._idle_cycle_count += 1
@@ -300,13 +315,9 @@ class DbusSun2000Service:
             except Exception as e:
                 self._failure_count += 1
                 self._idle_cycle_count = 0
-                self._set_polling_mode("active", self._update_interval_ms)
-                backoff_seconds = min(
-                    (self._update_interval_ms / 1000.0)
-                    * (2 ** (self._failure_count - 1)),
-                    60,
-                )
-                next_delay_ms = int(backoff_seconds * 1000)
+                next_delay_ms = self._resolve_offline_delay_ms()
+                self._set_polling_mode("offline", next_delay_ms)
+                backoff_seconds = next_delay_ms / 1000.0
                 s["/Connected"] = 0
                 s["/Status"] = f"Update failed: {e}"[:80]
                 LOG.warning(
