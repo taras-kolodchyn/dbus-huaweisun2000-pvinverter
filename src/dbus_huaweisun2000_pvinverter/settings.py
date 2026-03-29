@@ -77,7 +77,7 @@ class HuaweiSUN2000Settings(object):
         supported_settings = {
             "modbus_host": [
                 "/Settings/HuaweiSUN2000/ModbusHost",
-                "192.168.5.186",
+                "255.255.255.255",
                 "",
                 "",
                 0,

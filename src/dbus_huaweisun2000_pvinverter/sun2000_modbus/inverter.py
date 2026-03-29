@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - legacy pymodbus 2.x names
 
 from . import datatypes
 
-logging.basicConfig(level=logging.INFO)
+LOG = logging.getLogger(__name__)
 
 
 class Sun2000:
@@ -59,12 +59,10 @@ class Sun2000:
         if self.isConnected():
             if self._post_connect_delay:
                 time.sleep(self._post_connect_delay)
-            logging.info(
-                "Successfully connected to inverter %s:%s", self._host, self._port
-            )
+            LOG.info("Successfully connected to inverter %s:%s", self._host, self._port)
             return True
 
-        logging.error(
+        LOG.error(
             "Connection to inverter %s:%s failed after %.1fs",
             self._host,
             self._port,
@@ -102,7 +100,7 @@ class Sun2000:
                     unit=self.modbus_unit,
                 )
                 if isinstance(register_value, ModbusIOException):
-                    logging.error("Inverter modbus unit did not respond")
+                    LOG.error("Inverter modbus unit did not respond")
                     raise register_value
                 # If successful, decode and return the value
                 return datatypes.decode(
@@ -111,20 +109,20 @@ class Sun2000:
                 )
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
-                logging.error(f"Read attempt {attempt + 1} failed: " f"{ex}")
+                LOG.error("Read attempt %d failed: %s", attempt + 1, ex)
                 time.sleep(self.retry_delay)
                 # Try to reconnect before next attempt
                 try:
                     self.disconnect()
                 except Exception as disconnect_ex:
-                    logging.warning(f"Error while disconnecting: {disconnect_ex}")
+                    LOG.warning("Error while disconnecting: %s", disconnect_ex)
                 try:
                     self.connect()
                 except Exception as connect_ex:
-                    logging.warning(f"Error while reconnecting: {connect_ex}")
+                    LOG.warning("Error while reconnecting: %s", connect_ex)
             attempt += 1
         # All retries failed, raise the last exception
-        logging.critical("All retries to read register failed")
+        LOG.critical("All retries to read register failed")
         raise (
             last_exception
             if last_exception
@@ -179,7 +177,7 @@ class Sun2000:
                     unit=self.modbus_unit,
                 )
                 if isinstance(register_range_value, ModbusIOException):
-                    logging.error("Inverter modbus unit did not respond")
+                    LOG.error("Inverter modbus unit did not respond")
                     raise register_range_value
                 # If successful, decode and return the value
                 return datatypes.decode(
@@ -188,20 +186,20 @@ class Sun2000:
                 )
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
-                logging.error(f"Range read attempt {attempt + 1} failed: " f"{ex}")
+                LOG.error("Range read attempt %d failed: %s", attempt + 1, ex)
                 time.sleep(self.retry_delay)
                 # Try to reconnect before next attempt
                 try:
                     self.disconnect()
                 except Exception as disconnect_ex:
-                    logging.warning(f"Error while disconnecting: {disconnect_ex}")
+                    LOG.warning("Error while disconnecting: %s", disconnect_ex)
                 try:
                     self.connect()
                 except Exception as connect_ex:
-                    logging.warning(f"Error while reconnecting: {connect_ex}")
+                    LOG.warning("Error while reconnecting: %s", connect_ex)
             attempt += 1
         # All retries failed, raise the last exception
-        logging.critical("All retries to read range of registers failed")
+        LOG.critical("All retries to read range of registers failed")
         raise (
             last_exception
             if last_exception

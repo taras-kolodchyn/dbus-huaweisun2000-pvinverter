@@ -7,7 +7,6 @@ from .settings import HuaweiSUN2000Settings
 from .sun2000_modbus import inverter
 from .sun2000_modbus import registers
 
-
 LOG = logging.getLogger(__name__)
 
 

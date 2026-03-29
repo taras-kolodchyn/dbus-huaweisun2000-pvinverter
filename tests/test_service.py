@@ -300,6 +300,13 @@ def test_handlechangedvalue_accepts_changes():
     assert svc._handlechangedvalue("/any", 42) is True
 
 
+def test_unconfigured_host_detection():
+    assert m._is_unconfigured_host("255.255.255.255") is True
+    assert m._is_unconfigured_host("0.0.0.0") is True
+    assert m._is_unconfigured_host("") is True
+    assert m._is_unconfigured_host("192.168.1.20") is False
+
+
 def test_update_with_status_message_sets_status_and_latency():
     settings = FakeSettingsForService()
     svc = m.DbusSun2000Service(

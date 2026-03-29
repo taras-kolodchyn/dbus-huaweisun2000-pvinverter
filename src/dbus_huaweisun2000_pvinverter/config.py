@@ -1,7 +1,6 @@
 import logging
 import os
 
-
 ENV_LOGLEVEL = "DBUS_HUAWEISUN2000_LOGLEVEL"
 DEFAULT_LOGLEVEL = "DEBUG"
 

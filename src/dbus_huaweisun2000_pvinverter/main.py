@@ -11,6 +11,7 @@ initial value, write to the dummy data via the dbus. See example.
 
 https://github.com/victronenergy/dbus_vebus_to_pvinverter/tree/master/test
 """
+
 import logging
 import os
 import platform
@@ -43,6 +44,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only on target hardw
         ) from err
 
 LOG = logging.getLogger(__name__)
+UNCONFIGURED_MODBUS_HOSTS = {"", "0.0.0.0", "255.255.255.255"}
 
 
 class DbusSun2000Service:
@@ -242,6 +244,10 @@ def _format_n(p, v):
     return str(v)
 
 
+def _is_unconfigured_host(host):
+    return str(host).strip() in UNCONFIGURED_MODBUS_HOSTS
+
+
 def main():
 
     logging.basicConfig(
@@ -269,7 +275,7 @@ def main():
         f"'{settings.get('power_correction_factor')}'"
     )
 
-    while "255" in settings.get("modbus_host"):
+    while _is_unconfigured_host(settings.get("modbus_host")):
         # This catches the initial setting and allows the service
         # to be installed without configuring it first
         logging.warning(

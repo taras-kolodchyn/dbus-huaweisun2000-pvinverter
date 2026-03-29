@@ -290,3 +290,5 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/pycharm,python
 .DS_Store
 /dbus-env
+.tmp/
+.toolcache/

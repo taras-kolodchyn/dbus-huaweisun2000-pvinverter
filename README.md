@@ -91,6 +91,8 @@ sh dbus-huaweisun2000-pvinverter/install.sh
 ## ▶️ Usage
 
 - Service autostarts after installation.
+- Fresh installs stay idle until you set a real inverter IP instead of the default
+  `255.255.255.255`.
 - **Check status:** `svstat /service/dbus-huaweisun2000-pvinverter`
 - **Manual debug:**  
   `PYTHONPATH=/data/dbus-huaweisun2000-pvinverter/src python -m dbus_huaweisun2000_pvinverter`

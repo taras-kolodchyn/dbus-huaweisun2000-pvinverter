@@ -1,65 +1,54 @@
 #!/bin/bash
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-# Handle lock file for log directory (prevents installer hangs)
+set -eu
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+SERVICE_NAME=$(basename "$SCRIPT_DIR")
 LOCK_FILE="/var/log/dbus-huaweisun2000/lock"
+RC_LOCAL="/data/rc.local"
+GUI_QML_DIR="/opt/victronenergy/gui/qml"
+INVERTERS_SETTINGS_FILE="$GUI_QML_DIR/PageSettingsFronius.qml"
+BACKUP_DIR="$SCRIPT_DIR/.install-backup"
+BACKUP_FILE="$BACKUP_DIR/PageSettingsFronius.qml.orig"
+
+echo "SCRIPT_DIR: $SCRIPT_DIR"
+echo "SERVICE_NAME: $SERVICE_NAME"
+
 if [ -f "$LOCK_FILE" ]; then
     echo "INFO: Found lock file: $LOCK_FILE"
-    PID=$(fuser "$LOCK_FILE" 2>/dev/null)
-    if [ ! -z "$PID" ]; then
-        echo "INFO: Killing process holding lock: $PID"
-        kill -9 $PID
+    PID=$(fuser "$LOCK_FILE" 2>/dev/null || true)
+    if [ -n "$PID" ]; then
+        echo "INFO: Stopping process holding lock: $PID"
+        kill $PID 2>/dev/null || true
         sleep 1
     fi
     echo "INFO: Removing lock file: $LOCK_FILE"
     rm -f "$LOCK_FILE"
 fi
-echo "SCRIPT_DIR: $SCRIPT_DIR"
-SERVICE_NAME=$(basename $SCRIPT_DIR)
-echo "SERVICE_NAME: $SERVICE_NAME"
-# set permissions for script files
-chmod a+x $SCRIPT_DIR/restart.sh
-chmod 744 $SCRIPT_DIR/restart.sh
 
-chmod a+x $SCRIPT_DIR/uninstall.sh
-chmod 744 $SCRIPT_DIR/uninstall.sh
+chmod 744 "$SCRIPT_DIR/restart.sh" "$SCRIPT_DIR/uninstall.sh"
+chmod 755 "$SCRIPT_DIR/service/run" "$SCRIPT_DIR/service/log/run"
 
-chmod a+x $SCRIPT_DIR/service/run
-chmod 755 $SCRIPT_DIR/service/run
+ln -sfn "$SCRIPT_DIR/service" "/service/$SERVICE_NAME"
 
-chmod a+x $SCRIPT_DIR/service/log/run
-
-# create sym-link to run script in deamon
-ln -sfn $SCRIPT_DIR/service /service/$SERVICE_NAME
-
-# add install-script to rc.local to be ready for firmware update
-filename=/data/rc.local
-if [ ! -f $filename ]
-then
-    touch $filename
-    chmod 755 $filename
-    echo "#!/bin/bash" >> $filename
-    echo >> $filename
+if [ ! -f "$RC_LOCAL" ]; then
+    touch "$RC_LOCAL"
+    chmod 755 "$RC_LOCAL"
+    echo "#!/bin/bash" >> "$RC_LOCAL"
+    echo >> "$RC_LOCAL"
 fi
 
-grep -qxF "$SCRIPT_DIR/install.sh" $filename || echo "$SCRIPT_DIR/install.sh" >> $filename
+grep -qxF "$SCRIPT_DIR/install.sh" "$RC_LOCAL" || echo "$SCRIPT_DIR/install.sh" >> "$RC_LOCAL"
 
-# The "PV inverters" page in Settings is somewhat specific for Fronius. Let's change that.
-invertersSettingsFile="/opt/victronenergy/gui/qml/PageSettingsFronius.qml"
+mkdir -p "$BACKUP_DIR"
+if ! grep -q "dbus-huaweisun2000 start" "$INVERTERS_SETTINGS_FILE"; then
+    echo "INFO: Saving original $INVERTERS_SETTINGS_FILE to $BACKUP_FILE"
+    cp "$INVERTERS_SETTINGS_FILE" "$BACKUP_FILE"
+fi
 
-# Backup the original PageSettingsFronius.qml file with a timestamp before modification
-backupFile="${invertersSettingsFile}_backup_$(date +%Y%m%d%H%M%S)"
-echo "INFO: Creating backup of $invertersSettingsFile at $backupFile"
-cp "$invertersSettingsFile" "$backupFile"
+sed -i '/\/\/ dbus-huaweisun2000 start/,/\/\/ dbus-huaweisun2000 end/d' "$INVERTERS_SETTINGS_FILE"
+echo "INFO: Inserting Huawei SUN2000 menu entry into $INVERTERS_SETTINGS_FILE"
+sed -i "/model: VisibleItemModel/ r $SCRIPT_DIR/gui/menu_item.txt" "$INVERTERS_SETTINGS_FILE"
 
-# Remove all old dbus-huaweisun2000 blocks (safe multi-line removal)
-sed -i '/\/\/ dbus-huaweisun2000 start/,/\/\/ dbus-huaweisun2000 end/d' "$invertersSettingsFile"
+cp -av "$SCRIPT_DIR"/gui/*.qml "$GUI_QML_DIR/"
 
-# Ensure there are no duplicate or empty HuaweiSUN2000 menu blocks
-# This prevents menu duplication and QML syntax errors by always inserting a single valid menu block
-echo "INFO: Inserting HuaweiSUN2000 menu entry to $invertersSettingsFile"
-sed -i "/model: VisibleItemModel/ r $SCRIPT_DIR/gui/menu_item.txt" "$invertersSettingsFile"
-
-cp -av $SCRIPT_DIR/gui/*.qml /opt/victronenergy/gui/qml/
-
-# As we've modified the GUI, we need to restart it
 svc -t /service/start-gui
