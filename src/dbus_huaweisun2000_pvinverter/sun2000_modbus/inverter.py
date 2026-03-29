@@ -21,6 +21,45 @@ from . import datatypes
 LOG = logging.getLogger(__name__)
 
 
+class ModbusResponseError(ModbusIOException):
+    def __init__(self, address, quantity, response):
+        end_address = address + quantity - 1
+        self.address = address
+        self.quantity = quantity
+        self.end_address = end_address
+        self.response = response
+        self.function_code = getattr(response, "function_code", None)
+        self.exception_code = getattr(
+            response,
+            "exception_code",
+            getattr(response, "exceptionCode", None),
+        )
+        super().__init__(
+            "Modbus exception response while reading "
+            f"{address}-{end_address}: {response}"
+        )
+
+
+class UnsupportedRegisterError(ModbusResponseError):
+    pass
+
+
+def _raise_on_error_response(response, address, quantity):
+    if isinstance(response, ModbusIOException):
+        LOG.error("Inverter modbus unit did not respond")
+        raise response
+
+    if hasattr(response, "isError") and response.isError():
+        exception_code = getattr(
+            response,
+            "exception_code",
+            getattr(response, "exceptionCode", None),
+        )
+        if exception_code == 2:
+            raise UnsupportedRegisterError(address, quantity, response)
+        raise ModbusResponseError(address, quantity, response)
+
+
 class Sun2000:
     def __init__(
         self,
@@ -100,14 +139,18 @@ class Sun2000:
                     register.value.quantity,
                     unit=self.modbus_unit,
                 )
-                if isinstance(register_value, ModbusIOException):
-                    LOG.error("Inverter modbus unit did not respond")
-                    raise register_value
+                _raise_on_error_response(
+                    register_value,
+                    register.value.address,
+                    register.value.quantity,
+                )
                 # If successful, decode and return the value
                 return datatypes.decode(
                     register_value.encode()[1:],
                     register.value.data_type,
                 )
+            except UnsupportedRegisterError:
+                raise
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
                 LOG.error("Read attempt %d failed: %s", attempt + 1, ex)
@@ -177,14 +220,14 @@ class Sun2000:
                     quantity,
                     unit=self.modbus_unit,
                 )
-                if isinstance(register_range_value, ModbusIOException):
-                    LOG.error("Inverter modbus unit did not respond")
-                    raise register_range_value
+                _raise_on_error_response(register_range_value, start_address, quantity)
                 # If successful, decode and return the value
                 return datatypes.decode(
                     register_range_value.encode()[1:],
                     datatypes.DataType.MULTIDATA,
                 )
+            except UnsupportedRegisterError:
+                raise
             except (ConnectionException, ModbusIOException) as ex:
                 last_exception = ex
                 LOG.error("Range read attempt %d failed: %s", attempt + 1, ex)

@@ -443,3 +443,115 @@ def test_get_data_falls_back_to_single_reads_when_batching_unavailable():
     assert (
         registers.InverterEquipmentRegister.PowerFactor in holder["instance"].read_calls
     )
+
+
+def test_get_data_disables_unsupported_optional_daily_realtime_range(caplog):
+    values = build_values()
+    batch_payloads = {
+        (32064, 32085): _build_range_payload(
+            32064,
+            32085,
+            {
+                registers.InverterEquipmentRegister.InputPower: values[
+                    registers.InverterEquipmentRegister.InputPower
+                ],
+                registers.InverterEquipmentRegister.PhaseAVoltage: values[
+                    registers.InverterEquipmentRegister.PhaseAVoltage
+                ],
+                registers.InverterEquipmentRegister.PhaseBVoltage: values[
+                    registers.InverterEquipmentRegister.PhaseBVoltage
+                ],
+                registers.InverterEquipmentRegister.PhaseCVoltage: values[
+                    registers.InverterEquipmentRegister.PhaseCVoltage
+                ],
+                registers.InverterEquipmentRegister.PhaseACurrent: values[
+                    registers.InverterEquipmentRegister.PhaseACurrent
+                ],
+                registers.InverterEquipmentRegister.PhaseBCurrent: values[
+                    registers.InverterEquipmentRegister.PhaseBCurrent
+                ],
+                registers.InverterEquipmentRegister.PhaseCCurrent: values[
+                    registers.InverterEquipmentRegister.PhaseCCurrent
+                ],
+                registers.InverterEquipmentRegister.ActivePower: values[
+                    registers.InverterEquipmentRegister.ActivePower
+                ],
+                registers.InverterEquipmentRegister.PowerFactor: values[
+                    registers.InverterEquipmentRegister.PowerFactor
+                ],
+                registers.InverterEquipmentRegister.GridFrequency: values[
+                    registers.InverterEquipmentRegister.GridFrequency
+                ],
+            },
+        ),
+        (30075, 30076): _build_range_payload(
+            30075,
+            30076,
+            {
+                registers.InverterEquipmentRegister.MaximumActivePower: values[
+                    registers.InverterEquipmentRegister.MaximumActivePower
+                ],
+            },
+        ),
+        (32106, 32107): _build_range_payload(
+            32106,
+            32107,
+            {
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield: values[
+                    registers.InverterEquipmentRegister.AccumulatedEnergyYield
+                ],
+            },
+        ),
+        (32114, 32115): _build_range_payload(
+            32114,
+            32115,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYield: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYield
+                ],
+            },
+        ),
+    }
+
+    class OptionalRealtimeUnsupportedSun2000(FakeSun2000):
+        def read_range(self, start_address, quantity=0, end_address=0):
+            end = end_address if end_address else start_address + quantity - 1
+            self.read_range_calls.append((start_address, end))
+            if (start_address, end) == (40562, 40563):
+                raise cm.inverter.UnsupportedRegisterError(
+                    start_address,
+                    end - start_address + 1,
+                    "IllegalAddress",
+                )
+            return batch_payloads[(start_address, end)]
+
+        def read(self, register):
+            if register == registers.InverterEquipmentRegister.DailyEnergyYieldRealtime:
+                raise AssertionError(
+                    "Collector should stop probing the unsupported realtime register"
+                )
+            return super().read(register)
+
+    holder = {}
+
+    def factory(**_kwargs):
+        holder["instance"] = OptionalRealtimeUnsupportedSun2000(values=values)
+        return holder["instance"]
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=factory,
+        power_correction_factor=1.0,
+    )
+    collector.set_phase_type("Single-phase")
+
+    with caplog.at_level(logging.INFO, logger=cm.LOG.name):
+        first = collector.getData()
+        second = collector.getData()
+
+    assert first["/Ac/Energy/Today"] == 12340.0
+    assert second["/Ac/Energy/Today"] == 12340.0
+    assert holder["instance"].read_range_calls.count((40562, 40563)) == 1
+    assert any(
+        "Disabling optional Modbus range 40562-40563" in record.message
+        for record in caplog.records
+    )

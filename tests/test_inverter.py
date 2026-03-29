@@ -55,6 +55,21 @@ class FakeResponse:
         return b"\x00" + self._payload
 
 
+class FakeErrorResponse:
+    def __init__(self, *, function_code=131, exception_code=2):
+        self.function_code = function_code
+        self.exception_code = exception_code
+
+    def isError(self):
+        return True
+
+    def __str__(self):
+        return (
+            f"Exception Response({self.function_code}, 3, "
+            f"exception={self.exception_code})"
+        )
+
+
 class FakeClient:
     def __init__(
         self,
@@ -247,6 +262,23 @@ def test_read_raw_value_raises_last_exception_after_retries(monkeypatch):
         inverter.read_raw_value(make_register())
 
 
+def test_read_raw_value_raises_unsupported_register_without_retry(monkeypatch):
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[FakeErrorResponse(exception_code=2)],
+    )
+    monkeypatch.setattr(inv.time, "sleep", lambda *_: None)
+    inverter = inv.Sun2000("inverter.local", wait=0, retry_delay=0, retries=3)
+    clients[0]._open = True
+
+    with pytest.raises(inv.UnsupportedRegisterError, match="123-123"):
+        inverter.read_raw_value(make_register())
+
+    assert clients[0].close_calls == 0
+    assert clients[0].connect_calls == 0
+    assert clients[0].read_calls == [(123, 1, inverter.modbus_unit)]
+
+
 def test_read_range_validates_parameters(monkeypatch):
     install_fake_client(monkeypatch)
     inverter = inv.Sun2000("inverter.local", wait=0, retry_delay=0)
@@ -288,3 +320,20 @@ def test_read_range_retries_after_connection_exception(monkeypatch):
         (40000, 3, inverter.modbus_unit),
         (40000, 3, inverter.modbus_unit),
     ]
+
+
+def test_read_range_raises_unsupported_register_without_retry(monkeypatch):
+    clients = install_fake_client(
+        monkeypatch,
+        read_results=[FakeErrorResponse(exception_code=2)],
+    )
+    monkeypatch.setattr(inv.time, "sleep", lambda *_: None)
+    inverter = inv.Sun2000("inverter.local", wait=0, retry_delay=0, retries=3)
+    clients[0]._open = True
+
+    with pytest.raises(inv.UnsupportedRegisterError, match="40562-40563"):
+        inverter.read_range(40562, quantity=2)
+
+    assert clients[0].close_calls == 0
+    assert clients[0].connect_calls == 0
+    assert clients[0].read_calls == [(40562, 2, inverter.modbus_unit)]

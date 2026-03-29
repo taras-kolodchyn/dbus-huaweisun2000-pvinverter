@@ -63,6 +63,7 @@ _AUXILIARY_DATA_RANGES = (
     {
         "start": 40562,
         "end": 40563,
+        "optional_key": "_daily_energy_realtime",
         "registers": {
             "_daily_energy_realtime": (
                 registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
@@ -246,6 +247,7 @@ class ModbusDataCollector2000Delux:
         self.power_correction_factor = power_correction_factor
         self._phase_divisor = 3  # default to three-phase; may be updated later
         self._phase_type: Optional[str] = None
+        self._disabled_optional_keys = set()
 
     def set_phase_type(self, phase_type: Optional[str]):
         """Adjust per-phase calculations based on inverter topology."""
@@ -257,11 +259,20 @@ class ModbusDataCollector2000Delux:
             self._phase_divisor = 1
 
     def _read_range_group(self, group):
+        optional_key = group.get("optional_key")
+        if optional_key in self._disabled_optional_keys:
+            return {}
+
         try:
             payload = self.invSun2000.read_range(
                 group["start"],
                 end_address=group["end"],
             )
+        except inverter.UnsupportedRegisterError as err:
+            if optional_key is not None:
+                self._disable_optional_key(optional_key, group, err)
+                return {}
+            raise
         except Exception as err:
             LOG.debug(
                 "Batch read %s-%s unavailable, falling back to single reads: %s",
@@ -285,10 +296,60 @@ class ModbusDataCollector2000Delux:
                 )
         return values
 
+    def _disable_optional_key(self, optional_key, group, err):
+        if optional_key in self._disabled_optional_keys:
+            return
+        self._disabled_optional_keys.add(optional_key)
+        LOG.info(
+            "Disabling optional Modbus range %s-%s after hardware reject: %s",
+            group["start"],
+            group["end"],
+            err,
+        )
+
     def _read_register_value(self, key, register, batch_values):
         if key in batch_values:
             return batch_values[key]
         return self.invSun2000.read(register)
+
+    def _read_daily_energy_wh(self, batch_values):
+        last_error = None
+        realtime_key = "_daily_energy_realtime"
+        legacy_key = "_daily_energy_legacy"
+
+        if realtime_key not in self._disabled_optional_keys:
+            try:
+                daily_yield_raw = self._read_register_value(
+                    realtime_key,
+                    registers.InverterEquipmentRegister.DailyEnergyYieldRealtime,
+                    batch_values,
+                )
+                daily_yield_kwh = safe_float(daily_yield_raw, None)
+                if daily_yield_kwh is not None:
+                    return round(daily_yield_kwh * 1000.0, 1), None
+            except inverter.UnsupportedRegisterError as err:
+                self._disable_optional_key(
+                    realtime_key,
+                    _AUXILIARY_DATA_RANGES[-1],
+                    err,
+                )
+                last_error = err
+            except Exception as err:  # pragma: no cover - depends on hardware
+                last_error = err
+
+        try:
+            daily_yield_raw = self._read_register_value(
+                legacy_key,
+                registers.InverterEquipmentRegister.DailyEnergyYield,
+                batch_values,
+            )
+        except Exception as err:  # pragma: no cover - depends on hardware
+            return None, err if last_error is None else last_error
+
+        daily_yield_kwh = safe_float(daily_yield_raw, None)
+        if daily_yield_kwh is None:
+            return None, last_error
+        return round(daily_yield_kwh * 1000.0, 1), last_error
 
     def getData(self):
         # The connect() method internally checks whether there's already a connection
@@ -332,34 +393,7 @@ class ModbusDataCollector2000Delux:
             data["/Ac/L2/Energy/Forward"] = 0.0
             data["/Ac/L3/Energy/Forward"] = 0.0
 
-        daily_registers = (
-            registers.InverterEquipmentRegister.DailyEnergyYieldRealtime,
-            registers.InverterEquipmentRegister.DailyEnergyYield,
-        )
-
-        daily_yield_wh = None
-        last_error = None
-        for candidate in daily_registers:
-            try:
-                batch_key = (
-                    "_daily_energy_realtime"
-                    if candidate
-                    == registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
-                    else "_daily_energy_legacy"
-                )
-                daily_yield_raw = self._read_register_value(
-                    batch_key,
-                    candidate,
-                    batch_values,
-                )
-            except Exception as err:  # pragma: no cover - depends on hardware
-                last_error = err
-                continue
-            daily_yield_kwh = safe_float(daily_yield_raw, None)
-            if daily_yield_kwh is None:
-                continue
-            daily_yield_wh = round(daily_yield_kwh * 1000.0, 1)
-            break
+        daily_yield_wh, last_error = self._read_daily_energy_wh(batch_values)
 
         if daily_yield_wh is None:
             if last_error is not None:
