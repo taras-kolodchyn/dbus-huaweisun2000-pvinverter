@@ -44,11 +44,15 @@ jobs:
       - name: Run tests with coverage
         run: pytest --maxfail=1 --disable-warnings -q --cov=. --cov-report=xml --cov-report=term
 
+      - name: Install/uninstall smoke test
+        if: ${{ !env.ACT }}
+        run: bash docker/test_install_uninstall.sh
+
       - name: Docker Compose smoke test
         if: ${{ !env.ACT }}
         run: |
-          docker compose -f docker-compose.dev.yml up --build --abort-on-container-exit
-          docker compose -f docker-compose.dev.yml down --volumes --remove-orphans
+          docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml up --build --abort-on-container-exit
+          docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml down --volumes --remove-orphans
 
       - name: Check for README and LICENSE
         run: |

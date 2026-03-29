@@ -199,6 +199,7 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
    black --check .
    flake8 .
    pytest --maxfail=1 --disable-warnings -q
+   bash docker/test_install_uninstall.sh
    ```
 3. Reproduce the GitHub Actions pipeline with [act](https://github.com/nektos/act):
    ```bash
@@ -216,6 +217,13 @@ Modbus mock) with Docker Compose:
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
+```
+
+Run the heavier install/runtime/uninstall integration check with:
+
+```bash
+docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml up --build --abort-on-container-exit
+docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml down --volumes --remove-orphans
 ```
 
 The stack pulls the official Venus OS development image, installs this driver in editable
