@@ -571,30 +571,13 @@ class ModbusDataCollector2000Delux:
         data["/Dc/0/Voltage"] = pv_voltage
         data["/Dc/0/Current"] = pv_current
 
-    def getData(self):
-        # The connect() method internally checks whether there's already a connection
-        if not self.invSun2000.connect():
-            LOG.error("Connection error Modbus TCP")
-            return None
-
-        data = {}
+    def _collect_batch_values(self):
         batch_values = self._read_live_batch_values()
         for group in _AUXILIARY_DATA_RANGES:
             batch_values.update(self._read_range_group(group))
+        return batch_values
 
-        for path, spec in DIRECT_REGISTER_METRICS.items():
-            raw = self._read_register_value(path, spec["register"], batch_values)
-            data[path] = safe_float(raw, spec["initial"])
-
-        # state1 is read but not used
-        # state1 = self.invSun2000.read(registers.InverterEquipmentRegister.State1)
-        # state1_int = safe_int(state1)
-        # state1_string = ";".join(
-        #     [val for key, val in state1Readable.items() if state1_int & key > 0]
-        # )
-
-        # data['/Ac/StatusCode'] = statuscode
-
+    def _populate_energy_metrics(self, data, batch_values):
         energy_forward_raw = self._read_register_value(
             "_energy_forward",
             registers.InverterEquipmentRegister.AccumulatedEnergyYield,
@@ -622,18 +605,20 @@ class ModbusDataCollector2000Delux:
             data["/Ac/L1/Energy/Today"] = None
             data["/Ac/L2/Energy/Today"] = None
             data["/Ac/L3/Energy/Today"] = None
-        else:
-            data["/Ac/Energy/Today"] = daily_yield_wh
-            if self._phase_divisor == 3:
-                per_phase_today = round(daily_yield_wh / 3.0, 1)
-                data["/Ac/L1/Energy/Today"] = per_phase_today
-                data["/Ac/L2/Energy/Today"] = per_phase_today
-                data["/Ac/L3/Energy/Today"] = per_phase_today
-            else:
-                data["/Ac/L1/Energy/Today"] = daily_yield_wh
-                data["/Ac/L2/Energy/Today"] = 0.0
-                data["/Ac/L3/Energy/Today"] = 0.0
+            return
 
+        data["/Ac/Energy/Today"] = daily_yield_wh
+        if self._phase_divisor == 3:
+            per_phase_today = round(daily_yield_wh / 3.0, 1)
+            data["/Ac/L1/Energy/Today"] = per_phase_today
+            data["/Ac/L2/Energy/Today"] = per_phase_today
+            data["/Ac/L3/Energy/Today"] = per_phase_today
+        else:
+            data["/Ac/L1/Energy/Today"] = daily_yield_wh
+            data["/Ac/L2/Energy/Today"] = 0.0
+            data["/Ac/L3/Energy/Today"] = 0.0
+
+    def _populate_ac_summary_metrics(self, data, batch_values):
         data["/Ac/NumberOfPhases"] = self._phase_divisor
 
         if self._phase_divisor == 1:
@@ -698,6 +683,31 @@ class ModbusDataCollector2000Delux:
             * float(data["/Ac/L3/Current"])
             * self.power_correction_factor
         )
+
+    def getData(self):
+        # The connect() method internally checks whether there's already a connection
+        if not self.invSun2000.connect():
+            LOG.error("Connection error Modbus TCP")
+            return None
+
+        data = {}
+        batch_values = self._collect_batch_values()
+
+        for path, spec in DIRECT_REGISTER_METRICS.items():
+            raw = self._read_register_value(path, spec["register"], batch_values)
+            data[path] = safe_float(raw, spec["initial"])
+
+        # state1 is read but not used
+        # state1 = self.invSun2000.read(registers.InverterEquipmentRegister.State1)
+        # state1_int = safe_int(state1)
+        # state1_string = ";".join(
+        #     [val for key, val in state1Readable.items() if state1_int & key > 0]
+        # )
+
+        # data['/Ac/StatusCode'] = statuscode
+
+        self._populate_energy_metrics(data, batch_values)
+        self._populate_ac_summary_metrics(data, batch_values)
         self._derive_pv_metrics(data, batch_values)
 
         return data
