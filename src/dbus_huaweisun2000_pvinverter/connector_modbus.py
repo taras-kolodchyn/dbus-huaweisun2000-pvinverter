@@ -60,7 +60,7 @@ _PV_INPUT_DATA_RANGE = {
     "start": 32016,
     "end": 32063,
     "optional_key": "_pv_inputs",
-    "refresh_interval_s": 0.0,
+    "refresh_interval_s": config.PV_INPUT_REFRESH_INTERVAL_S,
     "registers": _PV_RANGE_REGISTERS,
 }
 _AUXILIARY_DATA_RANGES = (

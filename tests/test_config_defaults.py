@@ -89,6 +89,7 @@ def test_runtime_modbus_defaults_are_shared():
     assert config.ADAPTIVE_POLLING_IDLE_CONFIRM_CYCLES == 3
     assert config.ADAPTIVE_POLLING_IDLE_MIN_UPDATE_TIME_MS == 5000
     assert config.ADAPTIVE_POLLING_IDLE_MAX_UPDATE_TIME_MS == 10000
+    assert config.PV_INPUT_REFRESH_INTERVAL_S == 2.0
 
     assert settings.get("modbus_host") == config.DEFAULT_MODBUS_HOST
     assert settings.get("modbus_port") == config.DEFAULT_MODBUS_PORT

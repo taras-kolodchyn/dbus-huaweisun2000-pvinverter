@@ -776,10 +776,171 @@ def test_get_data_reuses_cached_pv_input_values_after_transient_range_failure():
         (*MAIN_RANGE_KEY, None, None),
         (*PV_INPUT_RANGE_KEY, None, None),
     ]
-    assert holder["instance"].read_range_calls[2:4] == [
-        (30075, 30076, None, None),
-        (32106, 32107, None, None),
-    ]
+    assert (*PV_INPUT_RANGE_KEY, 1, 0) not in holder["instance"].read_range_calls
+
+
+def test_get_data_reuses_cached_pv_input_values_within_refresh_window():
+    values = build_values()
+    batch_payloads = {
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        (30075, 30076): _build_range_payload(
+            30075,
+            30076,
+            {
+                registers.InverterEquipmentRegister.MaximumActivePower: values[
+                    registers.InverterEquipmentRegister.MaximumActivePower
+                ],
+            },
+        ),
+        (32106, 32107): _build_range_payload(
+            32106,
+            32107,
+            {
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield: values[
+                    registers.InverterEquipmentRegister.AccumulatedEnergyYield
+                ],
+            },
+        ),
+        (32114, 32115): _build_range_payload(
+            32114,
+            32115,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYield: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYield
+                ],
+            },
+        ),
+        (40562, 40563): _build_range_payload(
+            40562,
+            40563,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+                ],
+            },
+        ),
+    }
+
+    class CachedPvRangeSun2000(FakeSun2000):
+        def read_range(
+            self,
+            start_address,
+            quantity=0,
+            end_address=0,
+            retries=None,
+            retry_delay=None,
+            **_kwargs,
+        ):
+            end = end_address if end_address else start_address + quantity - 1
+            self.read_range_calls.append((start_address, end, retries, retry_delay))
+            return batch_payloads[(start_address, end)]
+
+    holder = {}
+    now = {"value": 0.0}
+
+    def factory(**_kwargs):
+        holder["instance"] = CachedPvRangeSun2000(values=values)
+        return holder["instance"]
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=factory,
+        power_correction_factor=1.0,
+        time_fn=lambda: now["value"],
+    )
+    collector.set_phase_type("Single-phase")
+
+    first = collector.getData()
+    now["value"] = 1.0
+    second = collector.getData()
+
+    assert first["/Pv/V"] == 500.0
+    assert second["/Pv/V"] == 500.0
+    assert (
+        holder["instance"].read_range_calls.count((*PV_INPUT_RANGE_KEY, None, None))
+        == 1
+    )
+
+
+def test_get_data_refreshes_cached_pv_input_values_after_interval():
+    values = build_values()
+    batch_payloads = {
+        MAIN_RANGE_KEY: _build_main_range_payload(values),
+        PV_INPUT_RANGE_KEY: _build_pv_input_range_payload(values),
+        (30075, 30076): _build_range_payload(
+            30075,
+            30076,
+            {
+                registers.InverterEquipmentRegister.MaximumActivePower: values[
+                    registers.InverterEquipmentRegister.MaximumActivePower
+                ],
+            },
+        ),
+        (32106, 32107): _build_range_payload(
+            32106,
+            32107,
+            {
+                registers.InverterEquipmentRegister.AccumulatedEnergyYield: values[
+                    registers.InverterEquipmentRegister.AccumulatedEnergyYield
+                ],
+            },
+        ),
+        (32114, 32115): _build_range_payload(
+            32114,
+            32115,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYield: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYield
+                ],
+            },
+        ),
+        (40562, 40563): _build_range_payload(
+            40562,
+            40563,
+            {
+                registers.InverterEquipmentRegister.DailyEnergyYieldRealtime: values[
+                    registers.InverterEquipmentRegister.DailyEnergyYieldRealtime
+                ],
+            },
+        ),
+    }
+
+    class RefreshingPvRangeSun2000(FakeSun2000):
+        def read_range(
+            self,
+            start_address,
+            quantity=0,
+            end_address=0,
+            retries=None,
+            retry_delay=None,
+            **_kwargs,
+        ):
+            end = end_address if end_address else start_address + quantity - 1
+            self.read_range_calls.append((start_address, end, retries, retry_delay))
+            return batch_payloads[(start_address, end)]
+
+    holder = {}
+    now = {"value": 0.0}
+
+    def factory(**_kwargs):
+        holder["instance"] = RefreshingPvRangeSun2000(values=values)
+        return holder["instance"]
+
+    collector = cm.ModbusDataCollector2000Delux(
+        inverter_factory=factory,
+        power_correction_factor=1.0,
+        time_fn=lambda: now["value"],
+    )
+    collector.set_phase_type("Single-phase")
+
+    collector.getData()
+    now["value"] = 3.0
+    collector.getData()
+
+    assert (
+        holder["instance"].read_range_calls.count((*PV_INPUT_RANGE_KEY, None, None))
+        == 1
+    )
     assert (*PV_INPUT_RANGE_KEY, 1, 0) in holder["instance"].read_range_calls
 
 
