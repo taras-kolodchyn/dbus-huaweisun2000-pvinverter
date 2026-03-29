@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - legacy pymodbus 2.x names
         pass
 
 
+from .. import config
 from . import datatypes
 
 LOG = logging.getLogger(__name__)
@@ -24,10 +25,10 @@ class Sun2000:
     def __init__(
         self,
         host,
-        port=502,
+        port=config.DEFAULT_MODBUS_PORT,
         timeout=5,
         wait=2,
-        modbus_unit=3,
+        modbus_unit=config.DEFAULT_MODBUS_UNIT,
         retries=3,
         retry_delay=1,
     ):

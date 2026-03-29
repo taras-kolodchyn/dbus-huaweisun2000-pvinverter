@@ -45,7 +45,6 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only on target hardw
         ) from err
 
 LOG = logging.getLogger(__name__)
-UNCONFIGURED_MODBUS_HOSTS = {"", "0.0.0.0", "255.255.255.255"}
 
 
 class DbusSun2000Service:
@@ -268,7 +267,7 @@ def _build_dbus_paths():
 
 
 def _is_unconfigured_host(host):
-    return str(host).strip() in UNCONFIGURED_MODBUS_HOSTS
+    return str(host).strip() in config.UNCONFIGURED_MODBUS_HOSTS
 
 
 def main():

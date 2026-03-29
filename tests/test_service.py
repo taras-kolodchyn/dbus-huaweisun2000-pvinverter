@@ -102,7 +102,10 @@ settings = types.SimpleNamespace(HuaweiSUN2000Settings=_FakeSettingsModule)
 sys.modules["dbus_huaweisun2000_pvinverter.settings"] = settings
 
 # config
-config = types.SimpleNamespace()
+config = types.SimpleNamespace(
+    LOGGING=10,
+    UNCONFIGURED_MODBUS_HOSTS={"", "0.0.0.0", "255.255.255.255"},
+)
 sys.modules["dbus_huaweisun2000_pvinverter.config"] = config
 # -------------------------------------------------------------------------------
 

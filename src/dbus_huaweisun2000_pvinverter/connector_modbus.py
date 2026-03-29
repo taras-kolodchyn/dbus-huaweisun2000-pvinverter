@@ -3,6 +3,7 @@ from typing import Optional
 
 from dbus.mainloop.glib import DBusGMainLoop
 
+from . import config
 from .metrics import DIRECT_REGISTER_METRICS
 from .settings import HuaweiSUN2000Settings
 from .sun2000_modbus import inverter
@@ -112,10 +113,10 @@ alert1Readable = {1: "", 2: ""}
 class ModbusDataCollector2000Delux:
     def __init__(
         self,
-        host="192.168.5.186",
-        port=502,
-        modbus_unit=1,
-        power_correction_factor=0.995,
+        host=config.DEFAULT_MODBUS_HOST,
+        port=config.DEFAULT_MODBUS_PORT,
+        modbus_unit=config.DEFAULT_MODBUS_UNIT,
+        power_correction_factor=config.DEFAULT_POWER_CORRECTION_FACTOR,
         inverter_factory=inverter.Sun2000,
     ):
         self.invSun2000 = inverter_factory(

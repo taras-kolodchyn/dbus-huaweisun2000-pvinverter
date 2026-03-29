@@ -175,7 +175,8 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
   persists across restarts.
 - **Modbus override (dev mode)** — set `DBUS_HUAWEISUN2000_MODBUS_HOST`,
   `DBUS_HUAWEISUN2000_MODBUS_PORT`, or `DBUS_HUAWEISUN2000_MODBUS_UNIT` to point the
-  driver at a simulator such as the Docker Compose stack described below.
+  driver at a simulator such as the Docker Compose stack described below. Runtime
+  defaults are host `255.255.255.255`, port `502`, and unit `0`.
 - **Phase type override** — if your inverter model naming is unusual, set
   `DBUS_HUAWEISUN2000_PHASE_TYPE` to `single-phase` or `three-phase` to override auto
   detection.
@@ -242,7 +243,8 @@ Environment knobs:
 - `VENUS_SIMULATION_FLAGS` (default `--with-pvinverter`) forwards extra devices to the
   simulation.
 - `DBUS_HUAWEISUN2000_MODBUS_*` override the Modbus endpoint that the driver connects to
-  (by default the bundled simulator).
+  (by default the bundled simulator). The playground pins the simulator to Modbus unit
+  `1` explicitly, while the real driver default remains `0` until configured.
 
 ---
 
