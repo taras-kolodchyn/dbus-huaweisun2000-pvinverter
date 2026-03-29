@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 
 from dbus.mainloop.glib import DBusGMainLoop
@@ -38,6 +39,7 @@ _AUXILIARY_DATA_RANGES = (
     {
         "start": 30075,
         "end": 30076,
+        "refresh_interval_s": 3600.0,
         "registers": {
             "/Ac/MaxPower": registers.InverterEquipmentRegister.MaximumActivePower,
         },
@@ -45,6 +47,7 @@ _AUXILIARY_DATA_RANGES = (
     {
         "start": 32106,
         "end": 32107,
+        "refresh_interval_s": 10.0,
         "registers": {
             "_energy_forward": (
                 registers.InverterEquipmentRegister.AccumulatedEnergyYield
@@ -54,6 +57,7 @@ _AUXILIARY_DATA_RANGES = (
     {
         "start": 32114,
         "end": 32115,
+        "refresh_interval_s": 10.0,
         "registers": {
             "_daily_energy_legacy": (
                 registers.InverterEquipmentRegister.DailyEnergyYield
@@ -63,6 +67,7 @@ _AUXILIARY_DATA_RANGES = (
     {
         "start": 40562,
         "end": 40563,
+        "refresh_interval_s": 10.0,
         "optional_key": "_daily_energy_realtime",
         "registers": {
             "_daily_energy_realtime": (
@@ -240,6 +245,7 @@ class ModbusDataCollector2000Delux:
         modbus_unit=config.DEFAULT_MODBUS_UNIT,
         power_correction_factor=config.DEFAULT_POWER_CORRECTION_FACTOR,
         inverter_factory=inverter.Sun2000,
+        time_fn=time.monotonic,
     ):
         self.invSun2000 = inverter_factory(
             host=host, port=port, modbus_unit=modbus_unit
@@ -248,6 +254,9 @@ class ModbusDataCollector2000Delux:
         self._phase_divisor = 3  # default to three-phase; may be updated later
         self._phase_type: Optional[str] = None
         self._disabled_optional_keys = set()
+        self._auxiliary_group_cache = {}
+        self._auxiliary_group_updated_at = {}
+        self._time_fn = time_fn
 
     def set_phase_type(self, phase_type: Optional[str]):
         """Adjust per-phase calculations based on inverter topology."""
@@ -258,10 +267,26 @@ class ModbusDataCollector2000Delux:
         else:
             self._phase_divisor = 1
 
+    @staticmethod
+    def _group_cache_key(group):
+        return (group["start"], group["end"])
+
     def _read_range_group(self, group):
         optional_key = group.get("optional_key")
+        cache_key = self._group_cache_key(group)
+        cached_values = self._auxiliary_group_cache.get(cache_key)
+        refresh_interval = group.get("refresh_interval_s")
+
         if optional_key in self._disabled_optional_keys:
-            return {}
+            return dict(cached_values or {})
+
+        if refresh_interval is not None and cached_values is not None:
+            updated_at = self._auxiliary_group_updated_at.get(cache_key)
+            if (
+                updated_at is not None
+                and (self._time_fn() - updated_at) < refresh_interval
+            ):
+                return dict(cached_values)
 
         try:
             payload = self.invSun2000.read_range(
@@ -271,7 +296,7 @@ class ModbusDataCollector2000Delux:
         except inverter.UnsupportedRegisterError as err:
             if optional_key is not None:
                 self._disable_optional_key(optional_key, group, err)
-                return {}
+                return dict(cached_values or {})
             raise
         except Exception as err:
             LOG.debug(
@@ -280,6 +305,13 @@ class ModbusDataCollector2000Delux:
                 group["end"],
                 err,
             )
+            if cached_values is not None:
+                LOG.debug(
+                    "Using cached values for range %s-%s after read failure",
+                    group["start"],
+                    group["end"],
+                )
+                return dict(cached_values)
             return {}
 
         values = {}
@@ -294,6 +326,9 @@ class ModbusDataCollector2000Delux:
                     group["end"],
                     err,
                 )
+        if refresh_interval is not None and values:
+            self._auxiliary_group_cache[cache_key] = dict(values)
+            self._auxiliary_group_updated_at[cache_key] = self._time_fn()
         return values
 
     def _disable_optional_key(self, optional_key, group, err):
