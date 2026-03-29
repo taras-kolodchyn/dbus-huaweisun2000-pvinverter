@@ -34,6 +34,8 @@ EOF
 
 cp -a /repo/. /data/dbus-huaweisun2000-pvinverter
 cd /data/dbus-huaweisun2000-pvinverter
+mkdir -p service/supervise service/log/supervise
+touch service/supervise/stale service/log/supervise/stale
 
 original_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")
 
@@ -46,6 +48,8 @@ grep -q "// dbus-huaweisun2000 start" /opt/victronenergy/gui/qml/PageSettingsFro
 test -f /opt/victronenergy/gui/qml/PageSettingsHuaweiSUN2000.qml
 test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/PageSettingsFronius.qml.orig
 grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
+test ! -e /data/dbus-huaweisun2000-pvinverter/service/supervise
+test ! -e /data/dbus-huaweisun2000-pvinverter/service/log/supervise
 grep -q -- "-t /service/start-gui" /tmp/svc.log
 
 modified_hash=$(sha256sum /opt/victronenergy/gui/qml/PageSettingsFronius.qml | awk "{print \$1}")

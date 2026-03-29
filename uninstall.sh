@@ -22,6 +22,11 @@ stop_supervised_service() {
     sleep 1
 }
 
+cleanup_supervise_dirs() {
+    local service_root=$1
+    rm -rf "$service_root/supervise" "$service_root/log/supervise"
+}
+
 stop_matching_processes() {
     local label=$1
     local pattern=$2
@@ -47,6 +52,7 @@ stop_matching_processes() {
 }
 
 stop_supervised_service "/service/$SERVICE_NAME"
+cleanup_supervise_dirs "$SCRIPT_DIR/service"
 
 echo "Removing service: /service/$SERVICE_NAME"
 rm -f "/service/$SERVICE_NAME"

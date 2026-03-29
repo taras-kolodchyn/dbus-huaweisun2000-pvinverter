@@ -21,9 +21,23 @@ stop_service() {
     sleep 1
 }
 
+cleanup_supervise_dirs() {
+    local service_root=$1
+    rm -rf "$service_root/supervise" "$service_root/log/supervise"
+}
+
 echo "SCRIPT_DIR: $SCRIPT_DIR"
 echo "SERVICE_NAME: $SERVICE_NAME"
 stop_service "/service/$SERVICE_NAME"
+
+if [ -L "/service/$SERVICE_NAME" ]; then
+    EXISTING_TARGET=$(readlink "/service/$SERVICE_NAME" || true)
+    if [ -n "$EXISTING_TARGET" ] && [ -d "$EXISTING_TARGET" ]; then
+        echo "INFO: Cleaning stale supervise state in $EXISTING_TARGET"
+        cleanup_supervise_dirs "$EXISTING_TARGET"
+    fi
+fi
+cleanup_supervise_dirs "$SCRIPT_DIR/service"
 
 chmod 744 "$SCRIPT_DIR/restart.sh" "$SCRIPT_DIR/uninstall.sh"
 chmod 755 "$SCRIPT_DIR/service/run" "$SCRIPT_DIR/service/log/run"
