@@ -205,7 +205,13 @@ class SpyTimeout:
         return True
 
 
-def build_service(timeout_impl=None):
+def build_service(
+    timeout_impl=None,
+    *,
+    partnumber="X",
+    hardware_version="0",
+    model_id=0,
+):
     paths = {
         "/Ac/Power": {"initial": 0, "textformat": m._format_w},
         "/Ac/Current": {"initial": 0, "textformat": m._format_a},
@@ -223,6 +229,9 @@ def build_service(timeout_impl=None):
         settings=settings,
         paths=paths,
         data_connector=connector,
+        partnumber=partnumber,
+        hardware_version=hardware_version,
+        model_id=model_id,
         # new params are keyword-only in the class and safe to pass from tests
         service_factory=FakeService,
         timeout_add=timeout_impl,
@@ -273,8 +282,27 @@ def test_basic_required_paths_and_defaults():
     assert p["/Role"] == "pvinverter"
     assert p["/StatusCode"] == 7
     assert p["/Connected"] == 1
+    assert p["/ProductId"] == 0
     assert p["/Position"] == 1
     assert p["/UpdateIndex"] == 0
+
+
+def test_product_id_uses_model_id_when_available():
+    svc, _ = build_service(model_id=444.0)
+    p = svc._dbusservice.paths
+
+    assert p["/ProductId"] == 444
+    assert p["/ModelID"] == 444.0
+
+
+def test_hardware_version_falls_back_to_part_number_for_unknown_values():
+    svc, _ = build_service(
+        partnumber="01075485-002",
+        hardware_version="unknown",
+    )
+    p = svc._dbusservice.paths
+
+    assert p["/HardwareVersion"] == "01075485-002"
 
 
 def test_runtime_noise_filter_drops_noisy_root_messages():

@@ -61,6 +61,32 @@ class _RuntimeNoiseFilter(logging.Filter):
         return True
 
 
+def _is_missing_static_metadata(value):
+    if value is None:
+        return True
+
+    if isinstance(value, str):
+        return value.strip().lower() in {"", "unknown", "x", "none"}
+
+    return False
+
+
+def _normalize_product_id(model_id):
+    try:
+        product_id = int(float(model_id))
+    except (TypeError, ValueError):
+        return 0
+
+    return product_id if product_id > 0 else 0
+
+
+def _normalize_hardware_version(hardware_version, partnumber):
+    if _is_missing_static_metadata(hardware_version):
+        if not _is_missing_static_metadata(partnumber):
+            return partnumber
+    return hardware_version
+
+
 class DbusSun2000Service:
     def __init__(
         self,
@@ -104,7 +130,7 @@ class DbusSun2000Service:
 
         # Create the mandatory objects
         self._dbusservice.add_path("/DeviceInstance", settings.get_vrm_instance())
-        self._dbusservice.add_path("/ProductId", 0)  # Huawei does not have a product id
+        self._dbusservice.add_path("/ProductId", _normalize_product_id(model_id))
         self._dbusservice.add_path("/ModelID", model_id)
         self._dbusservice.add_path("/ProductName", productname)
         self._dbusservice.add_path(
@@ -115,7 +141,10 @@ class DbusSun2000Service:
         )
         self._dbusservice.add_path("/FirmwareVersion", firmware_version)
         self._dbusservice.add_path("/Info/SoftwareVersion", software_version)
-        self._dbusservice.add_path("/HardwareVersion", hardware_version)
+        self._dbusservice.add_path(
+            "/HardwareVersion",
+            _normalize_hardware_version(hardware_version, partnumber),
+        )
         self._dbusservice.add_path("/Info/PhaseType", phase_type)
         self._dbusservice.add_path("/Connected", 1, writeable=True)
 
@@ -405,9 +434,6 @@ def main():
 
         dbuspath = _build_dbus_paths()
 
-        # If HardwareVersion is empty or None, assign it the value of PN
-        if not staticdata["HardwareVersion"]:
-            staticdata["HardwareVersion"] = staticdata["PN"]
         DbusSun2000Service(
             servicename="com.victronenergy.pvinverter.sun2000",
             settings=settings,
