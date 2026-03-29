@@ -101,7 +101,7 @@ sh dbus-huaweisun2000-pvinverter/install.sh
 - **Logs:**  
   `tail -f /var/log/dbus-huaweisun2000/current | tai64nlocal`
 
-## ⚙️ GUI-v2 Configuration
+## ⚙️ Configuration
 
 This project now targets **GUI-v2 only**.
 
@@ -113,16 +113,6 @@ This project now targets **GUI-v2 only**.
   ```
 - The script writes settings under `com.victronenergy.settings`, so changes survive restarts.
 - If you prefer manual editing, use Remote Console → `dbus-spy` and update `/Settings/HuaweiSUN2000/*`.
-
-### Browser Remote Console note
-
-The `gui-v2/` overlay in this repository affects the **native GX display** only.  
-The browser Remote Console uses a compiled `venus-gui-v2.wasm`, so browser-only UI fixes must be applied to upstream [`victronenergy/gui-v2`](https://github.com/victronenergy/gui-v2) and rebuilt.
-
-This repository includes a ready-to-apply upstream patch for Huawei PV inverter voltage/current summary values:
-
-- [`patches/gui-v2/0001-huawei-pvinverter-ac-summary-fallback.patch`](/Users/tkolodchyn/GitHub/SmartIT/dbus-huaweisun2000-pvinverter/patches/gui-v2/0001-huawei-pvinverter-ac-summary-fallback.patch)
-- [`patches/gui-v2/README.md`](/Users/tkolodchyn/GitHub/SmartIT/dbus-huaweisun2000-pvinverter/patches/gui-v2/README.md)
 
 ---
 
@@ -194,8 +184,6 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
 - `src/dbus_huaweisun2000_pvinverter/` — packaged Python source (service entry point, Modbus logic).
 - `tests/` — self-contained unit tests using lightweight stubs for system dependencies.
 - `service/` — run scripts used by the Venus OS init system.
-- `gui-v2/` — native GX gui-v2 overlay files.
-- `patches/gui-v2/` — upstream `victronenergy/gui-v2` patches for browser Remote Console.
 - `img/` — screenshots bundled with releases.
 
 ### Local workflow

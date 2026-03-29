@@ -5,8 +5,8 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 SERVICE_NAME=$(basename "$SCRIPT_DIR")
 RC_LOCAL="/data/rc.local"
 GUI_V2_DIR="/opt/victronenergy/gui-v2"
-GUI_V2_OVERLAY_DIR="$SCRIPT_DIR/gui-v2"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
+LEGACY_GUI_V2_BACKUP_DIR="$BACKUP_DIR/gui-v2"
 
 stop_service() {
     local service_path=$1
@@ -25,32 +25,30 @@ cleanup_supervise_dirs() {
     rm -rf "$service_root/supervise" "$service_root/log/supervise"
 }
 
-install_overlay_tree() {
-    local source_root=$1
+restore_legacy_gui_v2_backups() {
+    local backup_root=$1
     local target_root=$2
-    local backup_root=$3
-    local source
+    local backup_path
     local relative_path
     local target_path
-    local backup_path
 
-    if [ ! -d "$source_root" ] || [ ! -d "$target_root" ]; then
+    if [ ! -d "$backup_root" ] || [ ! -d "$target_root" ]; then
         return
     fi
 
-    find "$source_root" -type f | while read -r source; do
-        relative_path=${source#"$source_root"/}
-        target_path="$target_root/$relative_path"
-        backup_path="$backup_root/$relative_path.orig"
+    echo "INFO: Restoring legacy gui-v2 overlay backups from $backup_root"
+    find "$backup_root" -type f -name '*.orig' | while read -r backup_path; do
+        relative_path=${backup_path#"$backup_root"/}
+        target_path="$target_root/${relative_path%.orig}"
 
-        mkdir -p "$(dirname "$target_path")" "$(dirname "$backup_path")"
-        if [ -f "$target_path" ] && [ ! -f "$backup_path" ]; then
-            echo "INFO: Backing up $target_path to $backup_path"
-            cp "$target_path" "$backup_path"
-        fi
-        echo "INFO: Installing overlay $source -> $target_path"
-        cp "$source" "$target_path"
+        mkdir -p "$(dirname "$target_path")"
+        echo "INFO: Restoring $target_path from $backup_path"
+        cp "$backup_path" "$target_path"
+        rm -f "$backup_path"
     done
+
+    find "$backup_root" -depth -type d -empty -delete 2>/dev/null || true
+    rmdir "$BACKUP_DIR" 2>/dev/null || true
 }
 
 echo "SCRIPT_DIR: $SCRIPT_DIR"
@@ -80,10 +78,7 @@ fi
 
 grep -qxF "$SCRIPT_DIR/install.sh" "$RC_LOCAL" || echo "$SCRIPT_DIR/install.sh" >> "$RC_LOCAL"
 
-mkdir -p "$BACKUP_DIR"
-install_overlay_tree "$GUI_V2_OVERLAY_DIR" "$GUI_V2_DIR" "$BACKUP_DIR/gui-v2"
+restore_legacy_gui_v2_backups "$LEGACY_GUI_V2_BACKUP_DIR" "$GUI_V2_DIR"
 
 svc -u "/service/$SERVICE_NAME/log" 2>/dev/null || true
 svc -u "/service/$SERVICE_NAME" 2>/dev/null || true
-
-svc -t /service/start-gui

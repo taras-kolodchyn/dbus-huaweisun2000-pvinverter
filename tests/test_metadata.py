@@ -31,13 +31,6 @@ def test_readme_release_download_matches_workflow_asset_name():
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     readme = (repo_root / "README.md").read_text()
     workflow = (repo_root / ".github" / "workflows" / "python-ci.yml").read_text()
-    patch_readme = (repo_root / "patches" / "gui-v2" / "README.md").read_text()
-    patch_file = (
-        repo_root
-        / "patches"
-        / "gui-v2"
-        / "0001-huawei-pvinverter-ac-summary-fallback.patch"
-    )
 
     latest_download = "releases/latest/download/dbus-huaweisun2000-pvinverter.zip"
     assert latest_download in readme
@@ -47,11 +40,10 @@ def test_readme_release_download_matches_workflow_asset_name():
     assert "Venus OS (**v3.71+**)" in readme
     assert "below v3.71 is not supported" in readme
     assert "This project now targets **GUI-v2 only**." in readme
-    assert "Browser Remote Console note" in readme
+    assert "Browser Remote Console note" not in readme
     assert "Classic UI" not in readme
-    assert patch_file.exists()
-    assert "victronenergy/gui-v2" in patch_readme
-    assert "venus-gui-v2.wasm" in patch_readme
+    assert not (repo_root / "gui-v2").exists()
+    assert not (repo_root / "patches" / "gui-v2").exists()
 
 
 def test_venus_docker_harness_exports_version_for_editable_installs():

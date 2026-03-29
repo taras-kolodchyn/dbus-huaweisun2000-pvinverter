@@ -13,12 +13,8 @@ SCRIPT_ROOT=/root
 driver_root="$WORKSPACE_ROOT"
 service_command=(python3 -m dbus_huaweisun2000_pvinverter)
 settings_pythonpath=
-original_gui_v2_pvinverter_hash=
-original_gui_v2_solar_input_list_hash=
 install_completed=0
 SIM_PID=
-gui_v2_pvinverter_file=/opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
-gui_v2_solar_input_list_file=/opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 
 find_git_dir() {
   local dotgit=$1/.git
@@ -108,61 +104,13 @@ then
   pip_install_flags+=(--ignore-requires-python)
 fi
 
-prepare_install_layout() {
-  mkdir -p \
-    /opt/victronenergy/gui-v2/Victron/VenusOS/data/common \
-    /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar
-
-  if [ ! -f "$gui_v2_pvinverter_file" ]; then
-    cat >"$gui_v2_pvinverter_file" <<'EOF'
-Device {
-    readonly property real current: pvInverter.phases.singlePhaseCurrent
-    readonly property real voltage: pvInverter.phases.singlePhaseVoltage
-}
-EOF
-  fi
-
-  if [ ! -f "$gui_v2_solar_input_list_file" ]; then
-    cat >"$gui_v2_solar_input_list_file" <<'EOF'
-Page {
-    GradientListView {
-        delegate: ListQuantityGroupNavigation {
-            quantityModel: QuantityObjectModel {
-                QuantityObject { object: solarInputDelegate; key: "voltage" }
-                QuantityObject { object: solarInputDelegate; key: "current" }
-            }
-        }
-    }
-}
-EOF
-  fi
-}
-
-prepare_venus_stubs() {
-  if [ ! -e /service/start-gui ] && [ ! -x /usr/local/bin/svc ]; then
-    cat >/usr/local/bin/svc <<'EOF'
-#!/usr/bin/env bash
-if [ "$#" -eq 2 ] && [ "$1" = "-t" ] && [ "$2" = "/service/start-gui" ] && [ ! -e /service/start-gui ]; then
-  exit 0
-fi
-
-exec /usr/bin/svc "$@"
-EOF
-    chmod +x /usr/local/bin/svc
-  fi
-}
-
 if [ "$USE_INSTALL_SH" = "1" ]; then
   rm -rf "$INSTALL_ROOT"
   mkdir -p /data
-  prepare_install_layout
-  prepare_venus_stubs
   cp -a "$WORKSPACE_ROOT/." "$INSTALL_ROOT"
   driver_root="$INSTALL_ROOT"
   service_command=("$INSTALL_ROOT/service/run")
   settings_pythonpath="$INSTALL_ROOT/src"
-  original_gui_v2_pvinverter_hash=$(sha256sum "$gui_v2_pvinverter_file" | awk '{print $1}')
-  original_gui_v2_solar_input_list_hash=$(sha256sum "$gui_v2_solar_input_list_file" | awk '{print $1}')
 fi
 
 cd "$driver_root"
@@ -183,10 +131,6 @@ fi
 cleanup() {
     if [ "$USE_INSTALL_SH" = "1" ] && [ "$install_completed" = "1" ] && [ -f "$driver_root/uninstall.sh" ]; then
         (cd "$driver_root" && bash uninstall.sh)
-        restored_gui_v2_pvinverter_hash=$(sha256sum "$gui_v2_pvinverter_file" | awk '{print $1}')
-        restored_gui_v2_solar_input_list_hash=$(sha256sum "$gui_v2_solar_input_list_file" | awk '{print $1}')
-        test "$restored_gui_v2_pvinverter_hash" = "$original_gui_v2_pvinverter_hash"
-        test "$restored_gui_v2_solar_input_list_hash" = "$original_gui_v2_solar_input_list_hash"
         test ! -e /service/dbus-huaweisun2000-pvinverter
     fi
 
@@ -225,8 +169,6 @@ test "$installed_version" != "0+unknown"
 if [ "$USE_INSTALL_SH" = "1" ]; then
   bash install.sh
   test -L /service/dbus-huaweisun2000-pvinverter
-  grep -q "_acVoltage" "$gui_v2_pvinverter_file"
-  grep -q "displayVoltage" "$gui_v2_solar_input_list_file"
   install_completed=1
 fi
 

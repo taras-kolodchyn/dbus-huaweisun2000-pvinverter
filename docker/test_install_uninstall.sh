@@ -49,27 +49,18 @@ esac
 EOF
 chmod +x /usr/local/bin/dbus
 
-mkdir -p /service /data /opt/victronenergy/gui-v2/Victron/VenusOS/data/common /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar /var/log/dbus-huaweisun2000
-touch /service/start-gui
+mkdir -p /service /data /var/log/dbus-huaweisun2000 /opt/victronenergy/gui-v2/Victron/VenusOS/data/common /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar
 printf "preserve-me\n" >/var/log/dbus-huaweisun2000/lock
 
 cat >/opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml <<'"'"'EOF'"'"'
 Device {
-    readonly property real current: pvInverter.phases.singlePhaseCurrent
     readonly property real voltage: pvInverter.phases.singlePhaseVoltage
 }
 EOF
 
 cat >/opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml <<'"'"'EOF'"'"'
 Page {
-    GradientListView {
-        delegate: ListQuantityGroupNavigation {
-            quantityModel: QuantityObjectModel {
-                QuantityObject { object: solarInputDelegate; key: "voltage" }
-                QuantityObject { object: solarInputDelegate; key: "current" }
-            }
-        }
-    }
+    property string legacy: "original"
 }
 EOF
 
@@ -77,9 +68,11 @@ cp -a /repo/. /data/dbus-huaweisun2000-pvinverter
 cd /data/dbus-huaweisun2000-pvinverter
 mkdir -p service/supervise service/log/supervise
 touch service/supervise/stale service/log/supervise/stale
-
-original_gui_v2_pvinverter_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml | awk "{print \$1}")
-original_gui_v2_solar_list_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml | awk "{print \$1}")
+mkdir -p .install-backup/gui-v2/Victron/VenusOS/data/common .install-backup/gui-v2/Victron/VenusOS/pages/solar
+cp /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml .install-backup/gui-v2/Victron/VenusOS/data/common/PvInverter.qml.orig
+cp /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml .install-backup/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml.orig
+printf "patched\n" >/opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
+printf "patched\n" >/opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 
 bash configure.sh --host 192.0.2.10 --port 1502 --unit 3 --position 2 --custom-name "Huawei Test" --phase-type three-phase --update-ms 1000 --power-correction 1.0 >/tmp/configure.log
 grep -q "/Settings/HuaweiSUN2000/ModbusHost SetValue 192.0.2.10" /tmp/dbus.log
@@ -96,14 +89,12 @@ bash install.sh
 test -L /service/dbus-huaweisun2000-pvinverter
 test "$(readlink /service/dbus-huaweisun2000-pvinverter)" = "/data/dbus-huaweisun2000-pvinverter/service"
 grep -qxF "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
-test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/gui-v2/Victron/VenusOS/data/common/PvInverter.qml.orig
-test -f /data/dbus-huaweisun2000-pvinverter/.install-backup/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml.orig
-grep -q "_acVoltage" /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
-grep -q "displayVoltage" /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
+grep -q "singlePhaseVoltage" /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
+grep -q 'property string legacy: "original"' /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
+test ! -e /data/dbus-huaweisun2000-pvinverter/.install-backup/gui-v2
 test ! -e /data/dbus-huaweisun2000-pvinverter/service/supervise
 test ! -e /data/dbus-huaweisun2000-pvinverter/service/log/supervise
-grep -q -- "-t /service/start-gui" /tmp/svc.log
 
 : >/tmp/svc.log
 bash uninstall.sh
@@ -111,9 +102,6 @@ bash uninstall.sh
 test ! -e /service/dbus-huaweisun2000-pvinverter
 ! grep -q "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
 grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
-restored_gui_v2_pvinverter_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml | awk "{print \$1}")
-restored_gui_v2_solar_list_hash=$(sha256sum /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml | awk "{print \$1}")
-test "$restored_gui_v2_pvinverter_hash" = "$original_gui_v2_pvinverter_hash"
-test "$restored_gui_v2_solar_list_hash" = "$original_gui_v2_solar_list_hash"
-grep -q -- "-t /service/start-gui" /tmp/svc.log
+grep -q "singlePhaseVoltage" /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
+grep -q 'property string legacy: "original"' /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 '
