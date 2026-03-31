@@ -7,6 +7,8 @@ RC_LOCAL="/data/rc.local"
 GUI_V2_DIR="/opt/victronenergy/gui-v2"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
 LEGACY_GUI_V2_BACKUP_DIR="$BACKUP_DIR/gui-v2"
+RC_LOCAL_ENTRY="sh $SCRIPT_DIR/install.sh"
+LEGACY_RC_LOCAL_ENTRY="$SCRIPT_DIR/install.sh"
 
 stop_service() {
     local service_path=$1
@@ -65,6 +67,7 @@ fi
 cleanup_supervise_dirs "$SCRIPT_DIR/service"
 
 chmod 744 "$SCRIPT_DIR/restart.sh" "$SCRIPT_DIR/uninstall.sh" "$SCRIPT_DIR/configure.sh"
+chmod 755 "$SCRIPT_DIR/install.sh"
 chmod 755 "$SCRIPT_DIR/service/run" "$SCRIPT_DIR/service/log/run"
 
 ln -sfn "$SCRIPT_DIR/service" "/service/$SERVICE_NAME"
@@ -76,7 +79,8 @@ if [ ! -f "$RC_LOCAL" ]; then
     echo >> "$RC_LOCAL"
 fi
 
-grep -qxF "$SCRIPT_DIR/install.sh" "$RC_LOCAL" || echo "$SCRIPT_DIR/install.sh" >> "$RC_LOCAL"
+sed -i "\~$LEGACY_RC_LOCAL_ENTRY~d" "$RC_LOCAL"
+grep -qxF "$RC_LOCAL_ENTRY" "$RC_LOCAL" || echo "$RC_LOCAL_ENTRY" >> "$RC_LOCAL"
 
 restore_legacy_gui_v2_backups "$LEGACY_GUI_V2_BACKUP_DIR" "$GUI_V2_DIR"
 

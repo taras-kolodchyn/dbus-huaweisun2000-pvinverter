@@ -7,6 +7,8 @@ RC_LOCAL="/data/rc.local"
 GUI_V2_DIR="/opt/victronenergy/gui-v2"
 BACKUP_DIR="$SCRIPT_DIR/.install-backup"
 LEGACY_GUI_V2_BACKUP_DIR="$BACKUP_DIR/gui-v2"
+RC_LOCAL_ENTRY="sh $SCRIPT_DIR/install.sh"
+LEGACY_RC_LOCAL_ENTRY="$SCRIPT_DIR/install.sh"
 
 stop_supervised_service() {
     local service_path=$1
@@ -85,9 +87,9 @@ stop_matching_processes "driver" "[d]bus_huaweisun2000_pvinverter"
 stop_matching_processes "multilog" "[m]ultilog t s25000 n4 /var/log/dbus-huaweisun2000"
 
 if [ -f "$RC_LOCAL" ]; then
-    STARTUP=$SCRIPT_DIR/install.sh
-    echo "Removing startup entry from $RC_LOCAL: $STARTUP"
-    sed -i "\~$STARTUP~d" "$RC_LOCAL"
+    echo "Removing startup entries from $RC_LOCAL"
+    sed -i "\~$RC_LOCAL_ENTRY~d" "$RC_LOCAL"
+    sed -i "\~$LEGACY_RC_LOCAL_ENTRY~d" "$RC_LOCAL"
 fi
 
 restore_legacy_gui_v2_backups "$LEGACY_GUI_V2_BACKUP_DIR" "$GUI_V2_DIR"

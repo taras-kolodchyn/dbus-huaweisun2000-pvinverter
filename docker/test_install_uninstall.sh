@@ -90,13 +90,19 @@ bash install.sh
 
 test -L /service/dbus-huaweisun2000-pvinverter
 test "$(readlink /service/dbus-huaweisun2000-pvinverter)" = "/data/dbus-huaweisun2000-pvinverter/service"
-grep -qxF "/data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
+grep -qxF "sh /data/dbus-huaweisun2000-pvinverter/install.sh" /data/rc.local
 grep -qxF "preserve-me" /var/log/dbus-huaweisun2000/lock
 grep -q "singlePhaseVoltage" /opt/victronenergy/gui-v2/Victron/VenusOS/data/common/PvInverter.qml
 grep -q 'property string legacy: "original"' /opt/victronenergy/gui-v2/Victron/VenusOS/pages/solar/SolarInputListPage.qml
 test ! -e /data/dbus-huaweisun2000-pvinverter/.install-backup/gui-v2
 test ! -e /data/dbus-huaweisun2000-pvinverter/service/supervise
 test ! -e /data/dbus-huaweisun2000-pvinverter/service/log/supervise
+
+chmod 644 /data/dbus-huaweisun2000-pvinverter/install.sh
+rm -f /service/dbus-huaweisun2000-pvinverter
+sh /data/rc.local
+test -L /service/dbus-huaweisun2000-pvinverter
+test "$(readlink /service/dbus-huaweisun2000-pvinverter)" = "/data/dbus-huaweisun2000-pvinverter/service"
 
 : >/tmp/svc.log
 bash uninstall.sh
