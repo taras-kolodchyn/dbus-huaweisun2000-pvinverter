@@ -15,6 +15,7 @@ things smooth.
    ```bash
    black --check .
    flake8 .
+   python3.12 tests/integration/check_pymodbus.py
    pytest --maxfail=1 --disable-warnings -q
    ```
 3. (Optional) Smoke test the Docker playground:

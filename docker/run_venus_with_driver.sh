@@ -166,7 +166,9 @@ PY
 export_build_version
 # This disposable test container uses distro Python (PEP 668) so that the
 # driver and install.sh service can share the system D-Bus/GLib bindings.
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install "${pip_install_flags[@]}" -e "$WORKSPACE_ROOT"
+# Resolve the newest allowed dependencies even when the image has older ones.
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install "${pip_install_flags[@]}" \
+  --upgrade --upgrade-strategy eager -e "$WORKSPACE_ROOT"
 
 installed_version=$(python3 - <<'PY'
 from importlib.metadata import version
@@ -176,6 +178,7 @@ PY
 )
 echo "INFO: Editable install resolved version $installed_version"
 test "$installed_version" != "0+unknown"
+python3 "$WORKSPACE_ROOT/tests/integration/check_pymodbus.py"
 
 if [ "$USE_INSTALL_SH" = "1" ]; then
   bash install.sh
