@@ -15,6 +15,7 @@ service_command=(python3 -m dbus_huaweisun2000_pvinverter)
 settings_pythonpath=
 install_completed=0
 SIM_PID=
+DRIVER_PID=
 
 find_git_dir() {
   local dotgit=$1/.git
@@ -129,6 +130,14 @@ else
 fi
 
 cleanup() {
+    local status=$?
+    if [ "$status" -ne 0 ] && [ -f /tmp/dbus-huaweisun2000-service.log ]; then
+        cat /tmp/dbus-huaweisun2000-service.log >&2
+    fi
+    if [ -n "$DRIVER_PID" ]; then
+        kill "$DRIVER_PID" 2>/dev/null || true
+        wait "$DRIVER_PID" 2>/dev/null || true
+    fi
     if [ "$USE_INSTALL_SH" = "1" ] && [ "$install_completed" = "1" ] && [ -f "$driver_root/uninstall.sh" ]; then
         (cd "$driver_root" && bash uninstall.sh)
         test ! -e /service/dbus-huaweisun2000-pvinverter
@@ -195,7 +204,26 @@ if any([host, port, unit]):
 PY
 
 if [ "$USE_INSTALL_SH" = "1" ]; then
-  "${service_command[@]}" >/tmp/dbus-huaweisun2000-service.log 2>&1
+  # Run exactly one driver, with an exit status that the harness can observe.
+  # svscan discovers new services asynchronously; svc only requests shutdown.
+  service_stopped=0
+  for attempt in {1..30}; do
+    if svc -d /service/dbus-huaweisun2000-pvinverter 2>/dev/null &&
+      svstat /service/dbus-huaweisun2000-pvinverter | grep -q ': down'; then
+      service_stopped=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$service_stopped" != "1" ]; then
+    echo "ERROR: Supervised driver did not stop within 30 seconds" >&2
+    exit 1
+  fi
+  "${service_command[@]}" >/tmp/dbus-huaweisun2000-service.log 2>&1 &
+  DRIVER_PID=$!
+  python3 "$WORKSPACE_ROOT/docker/check_telemetry.py"
+  wait "$DRIVER_PID"
+  DRIVER_PID=
   grep -q "Connected to dbus" /tmp/dbus-huaweisun2000-service.log
   grep -q "Oneshot mode active" /tmp/dbus-huaweisun2000-service.log
 else

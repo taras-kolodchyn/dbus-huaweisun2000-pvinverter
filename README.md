@@ -226,11 +226,18 @@ docker compose -f docker-compose.dev.yml up --build
 Run the heavier install/runtime/uninstall integration check with:
 
 ```bash
-docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml up --build --abort-on-container-exit
+docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml up --build --abort-on-container-exit --exit-code-from venus
 docker compose -f docker-compose.dev.yml -f docker-compose.install-test.yml down --volumes --remove-orphans
 ```
 
 The playground pins the simulator to Modbus unit `1` explicitly, while the real driver default remains `0` until configured.
+
+The install integration test requires a successful Modbus poll and checks the
+published D-Bus power readings against the simulator (AC: 5800 W, DC: 6200 W).
+CI audits installed dependencies with `pip-audit`, always cleans up the Compose
+stack, and retains coverage, audit results, and failure logs for seven days.
+Actions are pinned to commit SHAs and test images to digests; Dependabot checks
+Actions, Python dependencies, and Compose images weekly.
 
 ---
 

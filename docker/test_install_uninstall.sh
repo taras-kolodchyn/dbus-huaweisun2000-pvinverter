@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
-IMAGE=${INSTALL_SCRIPT_TEST_IMAGE:-debian:bookworm-slim}
+IMAGE=${INSTALL_SCRIPT_TEST_IMAGE:-debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc}
 
 docker run --rm \
     -v "$REPO_ROOT":/repo:ro \
