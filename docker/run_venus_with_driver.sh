@@ -155,7 +155,9 @@ else:
 PY
 
 export_build_version
-python3 -m pip install "${pip_install_flags[@]}" -e "$WORKSPACE_ROOT"
+# This disposable test container uses distro Python (PEP 668) so that the
+# driver and install.sh service can share the system D-Bus/GLib bindings.
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install "${pip_install_flags[@]}" -e "$WORKSPACE_ROOT"
 
 installed_version=$(python3 - <<'PY'
 from importlib.metadata import version
