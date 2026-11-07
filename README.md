@@ -38,7 +38,7 @@ The driver reads inverter data over Modbus TCP, publishes it on D-Bus as a `pvin
 ## Requirements
 
 - Victron Cerbo GX or another Venus OS device
-- Venus OS (**v3.71+**, including **v3.85**)
+- Venus OS (**v3.71+**), including **v3.85**
 - Huawei SUN2000 inverter with Modbus TCP access
 - Python 3.12 runtime on the target Venus OS image
 - TCP port `502` reachable from the GX device to the inverter
