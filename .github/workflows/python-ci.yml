@@ -48,6 +48,9 @@ jobs:
       - name: Lint with flake8
         run: flake8 .
 
+      - name: Test driver with real pymodbus over TCP
+        run: python tests/integration/check_pymodbus.py
+
       - name: Run tests with coverage
         run: pytest --maxfail=1 --disable-warnings -q --cov=. --cov-report=xml --cov-report=term
 
