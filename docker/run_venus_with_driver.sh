@@ -205,7 +205,20 @@ PY
 
 if [ "$USE_INSTALL_SH" = "1" ]; then
   # Run exactly one driver, with an exit status that the harness can observe.
-  svc -d /service/dbus-huaweisun2000-pvinverter
+  # svscan discovers new services asynchronously; svc only requests shutdown.
+  service_stopped=0
+  for attempt in {1..30}; do
+    if svc -d /service/dbus-huaweisun2000-pvinverter 2>/dev/null &&
+      svstat /service/dbus-huaweisun2000-pvinverter | grep -q ': down'; then
+      service_stopped=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$service_stopped" != "1" ]; then
+    echo "ERROR: Supervised driver did not stop within 30 seconds" >&2
+    exit 1
+  fi
   "${service_command[@]}" >/tmp/dbus-huaweisun2000-service.log 2>&1 &
   DRIVER_PID=$!
   python3 "$WORKSPACE_ROOT/docker/check_telemetry.py"
