@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 authors = [{name = "Taras Kolodchyn"}]
 license = {file = "LICENSE"}
 dependencies = [
-    "pymodbus>=2.5,<3.0",
+    "pymodbus>=2.5,<4.0",
 ]
 
 [project.optional-dependencies]
