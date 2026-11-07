@@ -201,6 +201,7 @@ rm -r /data/dbus-huaweisun2000-pvinverter/
    ```bash
    black --check .
    flake8 .
+   python3.12 tests/integration/check_pymodbus.py
    pytest --maxfail=1 --disable-warnings -q
    bash docker/test_install_uninstall.sh
    ```
@@ -234,6 +235,13 @@ The playground pins the simulator to Modbus unit `1` explicitly, while the real 
 
 The install integration test requires a successful Modbus poll and checks the
 published D-Bus power readings against the simulator (AC: 5800 W, DC: 6200 W).
+CI also runs a separate TCP compatibility test with the installed PyModbus library,
+outside the pytest process that uses unit-test stubs. It checks client creation,
+register reads, scaling, range reads, and Modbus exception handling against a
+small server implemented with Python's standard library. The Venus container
+upgrades dependencies to the newest versions allowed by `pyproject.toml` and runs
+the same compatibility test before starting the driver, so an older package
+preinstalled in the image cannot hide an incompatible dependency update.
 CI audits installed dependencies with `pip-audit`, always cleans up the Compose
 stack, and retains coverage, audit results, and failure logs for seven days.
 Actions are pinned to commit SHAs and test images to digests; Dependabot checks
