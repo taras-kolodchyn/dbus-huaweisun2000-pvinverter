@@ -1,6 +1,6 @@
 services:
   modbus-sim:
-    image: python:3.12-slim
+    image: python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
     working_dir: /workspace
     volumes:
       - .:/workspace
@@ -10,7 +10,7 @@ services:
     command: ["bash", "-lc", "pip install 'pymodbus>=2,<3' && python docker/modbus_sim.py"]
 
   venus:
-    image: victronenergy/venus-docker
+    image: victronenergy/venus-docker:latest@sha256:41432b730af7e3cb1268713e1f17bf12561d1b662f1b82520b52a9daafdd2882
     working_dir: /workspace
     volumes:
       - .:/workspace
